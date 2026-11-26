@@ -1,0 +1,50 @@
+# 20 s of the sequence while pages change, knobs turn, presets change and STORM rises: nothing may fall silent or break
+wait 2600
+tap PLAY
+wav stress.wav
+wait 1500
+tap HOME
+turn K1 20 20
+wait 400
+tap SEL
+turn K1 -15 20
+turn K2 30 20
+wait 400
+tap ENV
+turn K2 20 20
+wait 400
+tap LFO
+turn K1 2
+wait 400
+tap LFO
+turn K1 4
+turn K2 30 20
+wait 600
+tap FX
+turn K4 60 20
+tap FX
+turn K4 60 20
+tap FX
+turn K1 2
+turn K4 60 20
+wait 1000
+turn ALGO 127 10
+wait 1500
+turn PRESET 1
+wait 1500
+turn PRESET 1
+wait 1500
+turn PRESET 4
+wait 1500
+turn PRESET 3
+wait 1500
+turn SELECT -60 10
+wait 800
+turn SELECT 60 10
+wait 1500
+wavstop
+expect playing 1
+expect peak_db_min -40
+tap PLAY
+wait 200
+expect playing 0

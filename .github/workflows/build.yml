@@ -36,7 +36,7 @@ jobs:
         continue-on-error: true      # a failing test is shown in the log but does not stop the firmware build
         run: |
           python3 fm1-base/tools/build.py . --host
-          build/host/monsun_host tests/basic.txt build/host
+          for t in basic pages speed stress; do build/host/monsun_host tests/$t.txt build/host; done
 
       - name: JieLi toolchain
         run: fm1-base/tools/get_toolchain.sh "$HOME/.jieli"

@@ -609,6 +609,19 @@ static int32_t accel(int k, int32_t e, int32_t mid, int32_t fast)
 
 static int iclamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 
+/* wie weit ein Regler pro Raste geht: auf HOME schnell (eine ganze Umdrehung in ~25 Rasten, schnell gedreht in ~6),
+ * auf SEL und ENV etwas schneller als sonst, auf den anderen Seiten fein wie bisher */
+static int32_t knob_step(int k, int32_t e)
+{
+    switch (ui.page) {
+    case PG_MAIN: return accel(EN_K1 + k, e, 2, 4) * 5;
+    case PG_FILTER:
+    case PG_FENV:
+    case PG_AENV: return accel(EN_K1 + k, e, 2, 4) * 3;
+    default: return accel(EN_K1 + k, e, 3, 6);
+    }
+}
+
 static void knob_turn(int k, int32_t e)
 {
     kdef d = kdef_of(k);
@@ -626,7 +639,7 @@ static void knob_turn(int k, int32_t e)
         else if (pi->kind == MK_SW)
             v = dir > 0 ? 127 : 0;
         else
-            v = iclamp(v + accel(EN_K1 + k, e, 3, 6), 0, 127);
+            v = iclamp(v + knob_step(k, e), 0, 127);
         if (v == edit.p[d.id])
             return;
         edit.p[d.id] = (uint8_t)v;
