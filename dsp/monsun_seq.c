@@ -19,6 +19,10 @@ void mn_init(mn_engine *e, float sr, mn_patch *pt)
     e->pitch = e->pitch_to = 48.0f;
     for (i = 0; i < 3; i++)
         e->mod[i].rs = 0x2545F491u * (uint32_t)(i + 1) + 12345u;
+    e->dr.rs = 0x1B873593u;
+    e->dr.sc_t = 1e9f;
+    e->g_step = -1;
+    e->sc_now = 1.0f;
     e->dirty = 1;
 }
 
@@ -156,6 +160,8 @@ static void seq_start(mn_engine *e)
     e->ext_ticks = 0;
     e->tie_hold = 0;
     e->step_clock = step_len(e);
+    e->g_step = -1;                      /* der Groove beginnt mit der Sequenz */
+    e->g_to_next = 0.0f;
     mods_step(e, 1);
 }
 
@@ -185,6 +191,8 @@ static void clock_tick(mn_engine *e)
         int tps = 96 / mn_dvs(e);
         if (e->ext_ticks % tps == 0)
             advance(e);
+        if (e->gv && e->gv->on && e->ext_ticks % 6 == 0)   /* der Groove: eine Sechzehntel je 6 Pulse */
+            groove_step(e, 0);
         e->ext_ticks++;
     }
 }
@@ -245,6 +253,19 @@ void mn_render(mn_engine *e, float *l, float *r, int n)
             if (until < chunk)
                 chunk = until < 1 ? 1 : until;
         }
+        if (e->running && !e->ext && e->gv && e->gv->on) {   /* der Groove: seine Sechzehntel, mit seinem Swing */
+            int until;
+            if (e->g_to_next <= 0.0f) {
+                float g16 = e->sr * 15.0f / mn_bpm(e), sw = STYLES[grv_style(e)].swing;
+                groove_step(e, done);
+                e->g_to_next += g16 * ((e->g_step & 1) ? 1.0f - sw : 1.0f + sw);
+            }
+            until = (int)e->g_to_next;
+            if ((float)until < e->g_to_next)
+                until++;
+            if (until < chunk)
+                chunk = until < 1 ? 1 : until;
+        }
         if (e->gate_left > 0.0f) {       /* das Gate des Steps endet mitten im Block */
             int g = (int)e->gate_left;
             if ((float)g < e->gate_left)
@@ -255,6 +276,8 @@ void mn_render(mn_engine *e, float *l, float *r, int n)
         voice_render(e, out + done, chunk);
         if (e->running && !e->ext)
             e->to_next -= (float)chunk;
+        if (e->running && !e->ext && e->gv && e->gv->on)
+            e->g_to_next -= (float)chunk;
         if (e->gate_left > 0.0f) {
             e->gate_left -= (float)chunk;
             if (e->gate_left <= 0.0f) {
@@ -274,5 +297,9 @@ void mn_render(mn_engine *e, float *l, float *r, int n)
         done += chunk;
     }
     fx_render(e, out, l, r, n);
+    if (e->gv && (e->gv->on || e->gqn)) /* GROOVE: die Pumpe und die Drums */
+        groove_render(e, l, r, n);
+    else
+        e->sc_now = 1.0f;
     e->counter += (uint32_t)n;
 }

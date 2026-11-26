@@ -148,6 +148,29 @@ typedef struct {
     int ready;
 } mn_fx;
 
+/* ---- GROOVE: Kick, Drums und eine pumpende Sidechain (MONSUNs eigene Zugabe) ---- */
+#define MN_NSTYLES 10
+extern const char *const MN_STYLE_NAME[MN_NSTYLES];
+typedef struct {
+    uint8_t on;                          /* 1: läuft mit PLAY */
+    uint8_t style;                       /* 0..MN_NSTYLES-1 */
+    uint8_t kick, drums, pump;           /* 0..127: KICK (kurz .. boomig), DRUMS (Lautstärke), PUMP (Tiefe) */
+    uint8_t rel, hats, tune, var;        /* 0..127: RELEASE der Pumpe, HATS, TUNE (64 = 0), VAR (Variation) */
+} mn_groove;
+void mn_groove_init(mn_groove *g);
+
+typedef struct { int16_t off; uint8_t step; } mn_gtrig;
+typedef struct {
+    float kph, kenv, kt, kfreq, kdec, kclick, kdrive, kpitch;   /* Kick */
+    float cenv, ct, cbp1, cbp2;          /* Clap / Snare (Rauschen im Bandpass) */
+    float sph, senv;                     /* Snare: der Ton */
+    float henv, oenv, hlp1, hlp2;        /* Hats: geschlossen, offen */
+    float pph, pfreq, penv;              /* Perc */
+    float sc_t;                          /* Samples seit dem letzten Kick (Sidechain) */
+    float lvl_k, lvl_c, lvl_h, lvl_o, lvl_p;
+    uint32_t rs;
+} mn_drums;
+
 /* Ereignisse von der Bedienung an den Audio-Teil (Ring, ein Schreiber / ein Leser) */
 enum { MEV_ON, MEV_OFF, MEV_ALLOFF, MEV_PLAY, MEV_STOP, MEV_CONT, MEV_CLOCK, MEV_BEND, MEV_HOLD, MEV_ONF };
 typedef struct { uint8_t type, a, b; } mn_ev;
@@ -197,6 +220,15 @@ typedef struct {
     int ext, ext_ticks, ext_running;
     int beat_tick;                       /* für die Step-Modulatoren */
     float step_clock;                    /* Samples bis zum nächsten Modulator-Step */
+    /* GROOVE */
+    const mn_groove *gv;
+    int g_step;
+    float g_to_next;
+    mn_gtrig gq[16];
+    int gqn;
+    mn_drums dr;
+    float sc_now;                        /* die Sidechain jetzt: 1 offen, 0 ganz geduckt (Anzeige) */
+    uint32_t kick_count;                 /* zählt die Kicks (Anzeige: ein Blitz je Kick) */
     /* FX */
     mn_fx fx;
     float mono[256];
@@ -208,6 +240,9 @@ typedef struct {
 void mn_init(mn_engine *e, float sr, mn_patch *pt);
 void mn_fx_memory(mn_engine *e, int16_t *dl, int16_t *dr, float *cho, float *rev, float *wide);
 void mn_changed(mn_engine *e);           /* nach jeder Änderung am Klang */
+void mn_groove_use(mn_engine *e, const mn_groove *g);   /* die GROOVE-Einstellungen (gehören der Bedienung) */
+int mn_groove_step(const mn_engine *e);  /* 0..31, -1: steht */
+int mn_groove_hit(const mn_engine *e, int lane, int step);   /* fürs Display: spielt die Spur dort? (0..3) */
 void mn_render(mn_engine *e, float *l, float *r, int n);   /* n <= 256 */
 
 /* aus der Bedienung (Hauptschleife): landen im Ring und wirken im nächsten Block */

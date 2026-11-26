@@ -112,10 +112,17 @@ tap GLO
 wait 30
 expect page 16
 shot glo.png
-# HOLD
-tap ARP
+# HOLD: ARP held for a second
+press ARP
+wait 1100
+release ARP
+wait 30
 expect hold 1
-tap ARP
+expect page 16
+press ARP
+wait 1100
+release ARP
+wait 30
 expect hold 0
 wait 2000
 expect dirty 0

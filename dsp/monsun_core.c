@@ -9,5 +9,6 @@
 #include "monsun_voice.c"
 #include "monsun_mod.c"
 #include "monsun_fx.c"
+#include "monsun_groove.c"
 #include "monsun_seq.c"
 #include "monsun_presets.c"

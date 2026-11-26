@@ -25,6 +25,24 @@ side channel that widens the image. Turned fully up, the mono synth becomes a wa
 If the FM-1 runs short of time (the load over 88 % for a second), MONSUN drops the oversampling by itself and shows
 **ECO**.
 
+## GROOVE
+
+MONSUN's own extra for jamming: a beat under the synth, and the **pumping sidechain**. Ten styles, two bars each:
+HOUSE, TECHHOUSE, TECHNO, TRANCE, ACID, DNB, DUBSTEP, GLITCHPOP, EDM, IDM, with their own kick, clap or snare,
+hi-hats and percussion, all synthesized here, and their own swing. It runs with PLAY (and MIDI clock), in the tempo.
+
+Every kick ducks MONSUN, its delay and reverb included, and lets it swell back: the pump. With DRUMS fully down the
+beat is silent and only the pump stays (for drums from elsewhere, e.g. a second FM-1 on MIDI clock).
+
+| Page | K1 | K2 | K3 | K4 |
+| --- | --- | --- | --- | --- |
+| **GROOVE** (ARP) | STYLE | KICK (short and punchy .. long and boomy) | DRUMS (level) | PUMP (depth) |
+| **GROOVE SETUP** (GLO, third page) | RELEASE (how fast the pump comes back) | HATS | TUNE (the kick, ±12) | VAR (ghost notes, rolls, fills) |
+
+On the GROOVE page **ARP** switches the groove on and off; its LED flashes with every kick. The OLED shows the five
+lanes with the playhead and the pump's curve, and the name in the header breathes with the pump. The groove settings
+are global: changing presets keeps the beat.
+
 ## The modulators
 
 Three, M1 to M3, as on the Typhon: each has one source, and its own level to each of 13 destinations at once
@@ -75,7 +93,9 @@ sequence), pitch bend bends it.
 | EDIT again | **SET 2** | VCA LVL | LEGATO | GLIDE MODE | HP RES |
 | FX | **FX1**, **FX2**, **FX3**, **FX MORE** | TYPE | | | MIX |
 | GLO | **GLOBAL** | TEMPO | VEL>CUT | VEL>VCA | DLY SYNC |
-| GLO again | **SETTINGS** | BEND (semitones) | MIDI CH | VELOCITY (on / fixed) | |
+| GLO again | **SETTINGS** | BEND (semitones) | MIDI CH | VELOCITY (on / fixed) | HOLD |
+| GLO a third time | **GROOVE SETUP** | RELEASE | HATS | TUNE | VAR |
+| ARP | **GROOVE** (ARP again: on / off) | STYLE | KICK | DRUMS | PUMP |
 | SEQ | **SEQUENCER** | STEP | NOTE | GATE | VEL |
 | SEQ again | **SEQ SETUP** | LENG | DVS | PROB | SWING |
 
@@ -88,7 +108,8 @@ sequence), pitch bend bends it.
 | PRESET | The 16 preset slots (loads at once; changes not saved are left behind, as on the Typhon) |
 | SAVE | Save: PRESET picks the slot, SAVE again saves (any other button cancels) |
 | REC held 1 s | The slot's factory preset back (save it to keep it) |
-| ARP | HOLD: notes keep sounding after the keys are let go |
+| ARP | The GROOVE page; there: groove on / off; on a SEQ page: copy / paste a step |
+| ARP held 1 s | HOLD: notes keep sounding after the keys are let go (HOLD in yellow in the header) |
 | OCT- / OCT+ | The keys' octave |
 | PLAY | The sequencer: start / stop |
 

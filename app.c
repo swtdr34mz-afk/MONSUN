@@ -28,12 +28,13 @@ static mn_engine eng;
 static mn_patch edit;                    /* der Klang in Arbeit (den die Engine spielt) */
 
 /* ------------------------------------------------------------ Speicher --- */
-#define SET_MAGIC 0x314E534Du            /* "MSN1" */
+#define SET_MAGIC 0x324E534Du            /* "MSN2" (mit GROOVE) */
 #define BANK_MAGIC 0x424E534Du           /* "MSNB" */
 #define NSLOTS 16
 typedef struct {
     uint32_t magic;
     uint8_t slot, edited, oct, bend, mch, touch, rsv[2];
+    mn_groove grv;                       /* GROOVE: global, damit ein Presetwechsel den Beat nicht ändert */
     mn_patch edit;
 } settings_t;
 typedef struct {
@@ -95,12 +96,14 @@ static void settings_load(void)
 {
     if (plat_store_load(OBJ_SETTINGS, &set, sizeof set) != (int)sizeof set || set.magic != SET_MAGIC
         || set.slot >= NSLOTS || !patch_ok(&set.edit) || set.oct > 6u || set.bend < 1u || set.bend > 12u
-        || set.mch > 16u) {
+        || set.mch > 16u || set.grv.style >= MN_NSTYLES || set.grv.kick > 127u || set.grv.drums > 127u
+        || set.grv.pump > 127u || set.grv.rel > 127u || set.grv.hats > 127u || set.grv.tune > 127u || set.grv.var > 127u) {
         memset(&set, 0, sizeof set);
         set.magic = SET_MAGIC;
         set.oct = 3;                     /* 3 = keine Verschiebung: die Tasten F2 .. G4 */
         set.bend = 2;
         set.touch = 1;
+        mn_groove_init(&set.grv);
         set.edit = *slot_patch(0);
     }
     edit = set.edit;
@@ -153,14 +156,15 @@ static void e_hold(int on)
 
 /* ------------------------------------------------------------------ Seiten --- */
 enum { PG_MAIN, PG_FILTER, PG_FENV, PG_AENV, PG_M1, PG_M1D, PG_M2, PG_M2D, PG_M3, PG_M3D, PG_SET1, PG_SET2,
-       PG_FX1, PG_FX2, PG_FX3, PG_FXP, PG_GLO1, PG_GLO2, PG_SEQ1, PG_SEQ2, NPAGES };
+       PG_FX1, PG_FX2, PG_FX3, PG_FXP, PG_GLO1, PG_GLO2, PG_SEQ1, PG_SEQ2, PG_GRV, PG_GLO3, NPAGES };
 static const char *const PAGE_NAME[NPAGES] = {"PANEL", "FILTER", "FILTER EG", "AMP EG", "M1", "M1 DEST", "M2",
                                               "M2 DEST", "M3", "M3 DEST", "SET", "SET 2", "FX1 DIST", "FX2 ENHANCE",
                                               "FX3 REFLECT", "FX MORE", "GLOBAL", "SETTINGS", "SEQUENCER",
-                                              "SEQ SETUP"};
+                                              "SEQ SETUP", "GROOVE", "GROOVE SETUP"};
 
 enum { K_NONE, K_PARAM, K_LVL, K_DEST, K_MSEL, K_MVAL, K_SSEL, K_SNOTE, K_SGATE, K_SVEL, K_TEMPO, K_BEND, K_MCH,
-       K_TOUCH };
+       K_TOUCH, K_GRV, K_HOLD };
+enum { GV_STYLE, GV_KICK, GV_DRUMS, GV_PUMP, GV_REL, GV_HATS, GV_TUNE, GV_VAR };
 typedef struct { uint8_t kind, id; } kdef;
 
 static const kdef PAGE_K[NPAGES][4] = {
@@ -176,10 +180,19 @@ static const kdef PAGE_K[NPAGES][4] = {
     {{K_PARAM, P_X3TYPE}, {K_PARAM, P_X3P1}, {K_PARAM, P_X3P2}, {K_PARAM, P_X3MIX}},
     {{K_PARAM, P_X2WIDTH}, {K_PARAM, P_X2FEED}, {K_PARAM, P_X3FEED}, {K_PARAM, P_X3DAMP}},
     {{K_TEMPO, 0}, {K_PARAM, P_VELCUT}, {K_PARAM, P_VELVCA}, {K_PARAM, P_X3SYNC}},
-    {{K_BEND, 0}, {K_MCH, 0}, {K_TOUCH, 0}, {K_NONE, 0}},
+    {{K_BEND, 0}, {K_MCH, 0}, {K_TOUCH, 0}, {K_HOLD, 0}},
     {{K_SSEL, 0}, {K_SNOTE, 0}, {K_SGATE, 0}, {K_SVEL, 0}},
     {{K_PARAM, P_SLEN}, {K_PARAM, P_SDVS}, {K_PARAM, P_SPROB}, {K_PARAM, P_SSWING}},
+    {{K_GRV, GV_STYLE}, {K_GRV, GV_KICK}, {K_GRV, GV_DRUMS}, {K_GRV, GV_PUMP}},
+    {{K_GRV, GV_REL}, {K_GRV, GV_HATS}, {K_GRV, GV_TUNE}, {K_GRV, GV_VAR}},
 };
+
+static uint8_t *grv_field(int f)
+{
+    uint8_t *g[8] = {&set.grv.style, &set.grv.kick, &set.grv.drums, &set.grv.pump, &set.grv.rel, &set.grv.hats,
+                     &set.grv.tune, &set.grv.var};
+    return g[f & 7];
+}
 
 enum { R_HEAD = 1, R_MID = 2, R_OLED = 4, R_ALL = 7 };   /* was neu gezeichnet wird */
 
@@ -202,6 +215,9 @@ static struct {
     uint8_t saving, save_slot;           /* SAVE: der Platz wird gewählt */
     uint32_t save_until;
     uint32_t rec_t;                      /* REC gehalten seit */
+    uint32_t arp_t;                      /* ARP gedrückt seit (kurz: GROOVE, 1 s: HOLD) */
+    uint8_t arp_long;
+    uint32_t kick_seen, flash_until;     /* der Kick-Blitz (LED, Logo) */
     int8_t key_note[NKEYS];              /* die Note jeder gedrückten Taste */
     int32_t step_drawn, lvl_drawn;
     uint32_t load_at, load_shown;
@@ -407,6 +423,11 @@ static const char *knob_label(kdef d)
     case K_BEND: return "BEND";
     case K_MCH: return "MIDI CH";
     case K_TOUCH: return "VELOCITY";
+    case K_HOLD: return "HOLD";
+    case K_GRV: {
+        static const char *const N[8] = {"STYLE", "KICK", "DRUMS", "PUMP", "RELEASE", "HATS", "TUNE", "VAR"};
+        return N[d.id & 7];
+    }
     default: return "";
     }
 }
@@ -428,13 +449,15 @@ static int knob_get(kdef d)
     case K_BEND: return (set.bend - 1) * 127 / 11;
     case K_MCH: return set.mch * 127 / 16;
     case K_TOUCH: return set.touch ? 127 : 0;
+    case K_HOLD: return ui.hold ? 127 : 0;
+    case K_GRV: return d.id == GV_STYLE ? set.grv.style * 127 / (MN_NSTYLES - 1) : *grv_field(d.id);
     default: return -1;
     }
 }
 
 static int knob_bip(kdef d)
 {
-    if (d.kind == K_LVL)
+    if (d.kind == K_LVL || (d.kind == K_GRV && d.id == GV_TUNE))
         return 1;
     return d.kind == K_PARAM && MN_PARAMS[d.id].kind == MK_BIP;
 }
@@ -592,6 +615,21 @@ static void val_text(kdef d, char *t)
             int_text(set.mch, t);
         return;
     case K_TOUCH: text_cat(t, set.touch ? "ON" : "FIXED"); return;
+    case K_HOLD: text_cat(t, ui.hold ? "ON" : "OFF"); return;
+    case K_GRV:
+        switch (d.id) {
+        case GV_STYLE: text_cat(t, MN_STYLE_NAME[set.grv.style]); return;
+        case GV_REL: int_text(40 + set.grv.rel * 560 / 127, t); text_cat(t, "MS"); return;
+        case GV_TUNE: {
+            int st = (set.grv.tune - 64) * 12 / 64;
+            if (st > 0)
+                text_cat(t, "+");
+            int_text(st, t + txt_len(t));
+            text_cat(t, " ST");
+            return;
+        }
+        default: int_text(v * 100 / 127, t); return;
+        }
     default: return;
     }
 }
@@ -683,6 +721,17 @@ static void knob_turn(int k, int32_t e)
         return;
     case K_MCH: set.mch = (uint8_t)iclamp(set.mch + dir, 0, 16); dirty(); return;
     case K_TOUCH: set.touch = dir > 0; dirty(); return;
+    case K_HOLD:
+        ui.hold = dir > 0;
+        e_hold(ui.hold);
+        return;
+    case K_GRV:
+        if (d.id == GV_STYLE)
+            set.grv.style = (uint8_t)iclamp(set.grv.style + dir, 0, MN_NSTYLES - 1);
+        else
+            *grv_field(d.id) = (uint8_t)iclamp(*grv_field(d.id) + accel(EN_K1 + k, e, 3, 6), 0, 127);
+        dirty();
+        return;
     default: return;
     }
     edited();
@@ -815,7 +864,7 @@ static void button(uint32_t i)
     case B_LFO: page_set(ui.page >= PG_M1 && ui.page < PG_M3D ? ui.page + 1 : PG_M1); break;
     case B_EDIT: page_set(ui.page == PG_SET1 ? PG_SET2 : PG_SET1); break;
     case B_FX: page_set(ui.page >= PG_FX1 && ui.page < PG_FXP ? ui.page + 1 : PG_FX1); break;
-    case B_GLO: page_set(ui.page == PG_GLO1 ? PG_GLO2 : PG_GLO1); break;
+    case B_GLO: page_set(ui.page == PG_GLO1 ? PG_GLO2 : ui.page == PG_GLO2 ? PG_GLO3 : PG_GLO1); break;
     case B_SEQ: page_set(ui.page == PG_SEQ1 ? PG_SEQ2 : PG_SEQ1); break;
     case B_PLAY: play_toggle(); break;
     case B_REC:
@@ -838,23 +887,9 @@ static void button(uint32_t i)
             slot_save(ui.save_slot);
         }
         break;
-    case B_ARP:
-        if (seqp) {                      /* Step kopieren, dann einfügen */
-            if (ui.copied < 0) {
-                ui.clip = edit.seq[ui.ssel];
-                ui.copied = (int8_t)ui.ssel;
-                app_say("COPIED", "STEP");
-            } else {
-                edit.seq[ui.ssel] = ui.clip;
-                ui.copied = -1;
-                edited();
-                app_say("PASTED", "");
-            }
-        } else {
-            ui.hold = (uint8_t)!ui.hold;
-            e_hold(ui.hold);
-            app_say("HOLD", ui.hold ? "ON" : "OFF");
-        }
+    case B_ARP:                          /* kurz oder lang: entschieden beim Loslassen / nach 1 s (arp_up) */
+        ui.arp_t = plat_ms();
+        ui.arp_long = 0;
         break;
     case B_OCTDN:
     case B_OCTUP: {
@@ -872,8 +907,51 @@ static void button(uint32_t i)
     }
 }
 
+static void hold_toggle(void)
+{
+    ui.hold = (uint8_t)!ui.hold;
+    e_hold(ui.hold);
+    ui.redraw |= R_ALL;
+    app_say("HOLD", ui.hold ? "ON" : "OFF");
+}
+
+/* ARP losgelassen, kurz gedrückt: auf den SEQ-Seiten Step kopieren / einfügen; auf der GROOVE-Seite den Groove an
+ * oder aus; sonst die GROOVE-Seite */
+static void arp_short(void)
+{
+    if (ui.page == PG_SEQ1 || ui.page == PG_SEQ2) {
+        if (ui.copied < 0) {
+            ui.clip = edit.seq[ui.ssel];
+            ui.copied = (int8_t)ui.ssel;
+            app_say("COPIED", "STEP");
+        } else {
+            edit.seq[ui.ssel] = ui.clip;
+            ui.copied = -1;
+            edited();
+            app_say("PASTED", "");
+        }
+    } else if (ui.page == PG_GRV) {
+        set.grv.on = (uint8_t)!set.grv.on;
+        dirty();
+        ui.redraw |= R_ALL;
+        app_say("GROOVE", set.grv.on ? MN_STYLE_NAME[set.grv.style] : "OFF");
+    } else {
+        page_set(PG_GRV);
+    }
+}
+
 static void held_buttons(uint32_t btn)
 {
+    if (ui.arp_t) {
+        if (!(btn >> B_ARP & 1u)) {      /* losgelassen */
+            if (!ui.arp_long)
+                arp_short();
+            ui.arp_t = 0;
+        } else if (!ui.arp_long && plat_ms() - ui.arp_t >= 1000u) {
+            ui.arp_long = 1;             /* 1 s gehalten: HOLD */
+            hold_toggle();
+        }
+    }
     if (ui.rec_t) {
         if (!(btn >> B_REC & 1u))
             ui.rec_t = 0;
@@ -933,14 +1011,17 @@ void app_input_only(void) { input(); }
 static void lights(void)
 {
     static const uint8_t PAGE_BTN[NPAGES] = {B_HOME, B_SEL, B_ENV, B_ENV, B_LFO, B_LFO, B_LFO, B_LFO, B_LFO, B_LFO,
-                                             B_EDIT, B_EDIT, B_FX, B_FX, B_FX, B_FX, B_GLO, B_GLO, B_SEQ, B_SEQ};
+                                             B_EDIT, B_EDIT, B_FX, B_FX, B_FX, B_FX, B_GLO, B_GLO, B_SEQ, B_SEQ,
+                                             B_ARP, B_GLO};
     uint32_t btn = 1u << PAGE_BTN[ui.page], dimb, lit = 0, k;
     if (ui.playing)
         btn |= LED_PLAY_GREEN;
     if (ui.rec)
         btn |= 1u << B_REC;
-    if (ui.hold)
+    if (set.grv.on && plat_ms() < ui.flash_until)   /* GROOVE an: ARP blitzt mit jeder Kick */
         btn |= 1u << B_ARP;
+    else if (!set.grv.on || !ui.playing)
+        btn &= ~(1u << B_ARP);
     if (ui.saving && (plat_ms() / 250u) & 1u)
         btn |= 1u << B_SAVE;
     if (set.oct != 3)
@@ -1117,8 +1198,8 @@ static void draw_knob(int k, int32_t cx, int32_t y, uint32_t now)
 /* ---- die Seitengruppen: kleine Leuchtpunkte, wo man in der Gruppe ist ---- */
 static void group_of(int pg, int *i, int *n)
 {
-    static const uint8_t G0[NPAGES] = {0, 0, 0, 1, 0, 1, 2, 3, 4, 5, 0, 1, 0, 1, 2, 3, 0, 1, 0, 1};
-    static const uint8_t GN[NPAGES] = {1, 1, 2, 2, 6, 6, 6, 6, 6, 6, 2, 2, 4, 4, 4, 4, 2, 2, 2, 2};
+    static const uint8_t G0[NPAGES] = {0, 0, 0, 1, 0, 1, 2, 3, 4, 5, 0, 1, 0, 1, 2, 3, 0, 1, 0, 1, 0, 2};
+    static const uint8_t GN[NPAGES] = {1, 1, 2, 2, 6, 6, 6, 6, 6, 6, 2, 2, 4, 4, 4, 4, 3, 3, 2, 2, 1, 3};
     *i = G0[pg];
     *n = GN[pg];
 }
@@ -1500,11 +1581,76 @@ static void oled_save(void)
     ctext(120, 80, &FONT_XS, "PRESET: SLOT   SAVE: OK", C_OLED_DIM);
 }
 
+static void oled_groove(void)            /* die Spuren des Grooves (zwei Takte), der laufende Step; darunter die Pumpe */
+{
+    static const char *const LN[5] = {"KICK", "SNR", "HAT", "OPEN", "PERC"};
+    col3 teal = c3(C_TEAL), yel = c3(C_YEL);
+    int lane, i, cur = mn_groove_step(&eng);
+    float pump = (float)set.grv.pump / 127.0f, depth = 0.95f * pump * (1.3f - 0.3f * pump);
+    float rel = 0.04f + 0.56f * (float)set.grv.rel / 127.0f, beat = 60.0f / mn_bpm(&eng), px = 0, py = 0;
+    for (lane = 0; lane < 5; lane++) {
+        int32_t y = 9 + lane * 9;
+        cv_text(11, y - 3, &FONT_XS, LN[lane], lane == 0 ? C_YEL : C_OLED_DIM);
+        for (i = 0; i < 32; i++) {
+            int v = mn_groove_hit(&eng, lane, i);
+            float x = 44.0f + (float)i * 5.75f;
+            int now = i == cur;
+            if (v) {
+                col3 c = lane == 0 ? yel : teal;
+                float a = v == 1 ? 0.35f : v == 2 ? 0.75f : 1.0f;
+                rrect((int32_t)x, y, 4, 5, 1.5f, now ? rgb3(255, 255, 255) : c, c, set.grv.on ? a : a * 0.4f);
+                if (now)
+                    bloom(x + 2.0f, (float)y + 2.5f, 7.0f, c, 0.9f);
+            } else {
+                px_blend((int32_t)x + 2, y + 2, rgb3(70, 74, 78), 1.0f);
+            }
+        }
+    }
+    if (cur >= 0) {                      /* der Abspielkopf */
+        float x = 44.0f + (float)cur * 5.75f + 2.0f;
+        aa_line(x, 6.0f, x, 52.0f, rgb3(255, 255, 255), 0.18f);
+    }
+    /* die Pumpe: eine Viertel lang, wie tief und wie schnell zurück; der Punkt zeigt, wo sie gerade ist */
+    for (i = 0; i <= 168; i += 2) {
+        float t = (float)i / 168.0f * beat, g;
+        if (t < 0.004f)
+            g = 1.0f - depth * t / 0.004f;
+        else if (t < 0.004f + rel) {
+            float u = 1.0f - (t - 0.004f) / rel;
+            g = 1.0f - depth * u * u * (3.0f - 2.0f * u);
+        } else
+            g = 1.0f;
+        {
+            float x = 56.0f + (float)i, y = 90.0f - g * 30.0f;
+            if (i)
+                neon(px, py, x, y, yel, set.grv.on ? 1.0f : 0.4f);
+            fill_col((int32_t)x, y, 90.0f, yel, 0.08f);
+            px = x;
+            py = y;
+        }
+    }
+    if (set.grv.on && ui.playing) {
+        float y = 90.0f - eng.sc_now * 30.0f;
+        bloom(50.0f, y, 8.0f, yel, 0.9f);
+        aa_disc(50.0f, y, 2.4f, rgb3(255, 255, 230), 1.0f);
+    }
+    cv_text(11, 64, &FONT_XS, "PUMP", C_OLED_DIM);
+    {
+        const char *st = set.grv.on ? MN_STYLE_NAME[set.grv.style] : "OFF";
+        int32_t w = text_w(&FONT_XS, st);
+        if (set.grv.on)
+            text_glow(229 - w, 64, &FONT_XS, st, C_YEL, C_YEL_DIM);
+        else
+            cv_text(229 - w, 64, &FONT_XS, "OFF  ARP: ON", C_OLED_DIM);
+    }
+}
+
 static int oled_animated(void)           /* diese Seiten bewegen sich: das OLED jeden zweiten Frame neu */
 {
     return ui.page == PG_MAIN || ui.page == PG_FILTER || ui.page == PG_FENV || ui.page == PG_AENV
            || ui.page == PG_SET1 || ui.page == PG_SET2 || mod_of_page(ui.page) >= 0
-           || ((ui.page == PG_SEQ1 || ui.page == PG_SEQ2) && ui.rec) || ui.page == PG_GLO1 || ui.page == PG_GLO2;
+           || ((ui.page == PG_SEQ1 || ui.page == PG_SEQ2) && ui.rec) || ui.page == PG_GLO1 || ui.page == PG_GLO2
+           || ui.page == PG_GRV || ui.page == PG_GLO3;
 }
 
 static void draw_oled(void)
@@ -1529,6 +1675,8 @@ static void draw_oled(void)
         case PG_FXP: oled_fx(); break;
         case PG_SEQ1:
         case PG_SEQ2: oled_seq(); break;
+        case PG_GRV:
+        case PG_GLO3: oled_groove(); break;
         default: oled_glo(); break;
         }
     oled_glass();
@@ -1546,11 +1694,18 @@ static void draw_head(uint32_t now)
         x = cv_text(8, 7, &FONT_B, ui.msg[0], C_WHITE);
         text_glow(x + 8, 7, &FONT_B, ui.msg[1], C_YEL, C_YEL_DIM);
     } else {
-        bloom(36.0f, 14.0f, 34.0f, yel, 0.10f);
+        {   /* der Name leuchtet; mit GROOVE pulsiert er mit der Pumpe */
+            float pulse = set.grv.on && ui.playing ? (1.0f - eng.sc_now) : 0.0f;
+            bloom(36.0f, 14.0f, 34.0f + 10.0f * pulse, yel, 0.10f + 0.45f * pulse);
+        }
         text_glow(8, 6, &FONT_B, "MONSUN", C_YEL, C_YEL_DIM);
+
         x = 8 + text_w(&FONT_B, "MONSUN");
         cv_text(x + 6, 4, &FONT_XS, "MONO", C_WHITE);
-        cv_text(x + 6, 14, &FONT_XS, "SYNTH", C_SUB);
+        if (ui.hold)                     /* HOLD an: statt SYNTH, in Gelb */
+            text_glow(x + 6, 14, &FONT_XS, "HOLD", C_YEL, C_YEL_DIM);
+        else
+            cv_text(x + 6, 14, &FONT_XS, "SYNTH", C_SUB);
         /* der Platz als Schild */
         t[0] = (char)('0' + (set.slot + 1) / 10);
         t[1] = (char)('0' + (set.slot + 1) % 10);
@@ -1718,6 +1873,7 @@ void app_init(void)
     mn_init(&eng, SR, &edit);
     mn_fx_memory(&eng, fx_dl, fx_dr, fx_cho, fx_rev, fx_wide);
     eng.bend_range = (float)set.bend;
+    mn_groove_use(&eng, &set.grv);
     for (i = 0; i < NKEYS; i++)
         ui.key_note[i] = -1;
     ui.copied = -1;
@@ -1837,6 +1993,12 @@ void app_frame(void)
     ui.scope_pos = (uint8_t)((ui.scope_pos + 1u) % 96u);
     if (oled_animated() && !(ui.frame & 1u))   /* lebende Kurven: 30 Bilder pro Sekunde */
         ui.redraw |= R_OLED;
+    if (eng.kick_count != ui.kick_seen) {   /* eine Kick: ARP blitzt */
+        ui.kick_seen = eng.kick_count;
+        ui.flash_until = now + 70u;
+    }
+    if (set.grv.on && ui.playing && (ui.frame & 1u))   /* der Name pulsiert mit der Pumpe */
+        ui.redraw |= R_HEAD;
     pk = (int32_t)(fm_sqrtf(out_peak < 1.0f ? out_peak : 1.0f) * 8.0f);
     if (pk != ui.peak_drawn) {           /* der Pegel im Kopf */
         ui.peak_drawn = pk;
@@ -1922,6 +2084,14 @@ int app_expect(const char *what, int *got)
         *got = set.oct;
     else if (!strcmp(what, "dirty"))
         *got = set_dirty;
+    else if (!strcmp(what, "groove"))
+        *got = set.grv.on;
+    else if (!strcmp(what, "gstyle"))
+        *got = set.grv.style;
+    else if (!strcmp(what, "gstep"))
+        *got = mn_groove_step(&eng);
+    else if (!strncmp(what, "kicks_ge", 8))   /* kicks_geN: mindestens N Kicks gespielt (1) */
+        *got = (int)eng.kick_count >= atoi(what + 8);
     else if (!strcmp(what, "dest"))
         *got = ui.dest[0];
     else if (!strncmp(what, "seqnote", 7))

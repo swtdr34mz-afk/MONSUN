@@ -1,0 +1,37 @@
+# GROOVE: ARP opens the page, ARP again switches it on; it plays with PLAY and the kicks pump
+wait 2600
+tap ARP
+wait 30
+expect page 20
+expect groove 0
+tap ARP
+wait 30
+expect groove 1
+turn K1 2
+wait 30
+expect gstyle 2
+tap PLAY
+wav groove.wav
+wait 3000
+wavstop
+expect playing 1
+expect peak_db_min -20
+shot groove.png
+expect kicks_ge5 1
+# the setup page under GLO
+tap GLO
+tap GLO
+tap GLO
+wait 30
+expect page 21
+shot groove_setup.png
+# off again: ARP on the GROOVE page
+tap ARP
+wait 30
+expect page 20
+tap ARP
+wait 30
+expect groove 0
+tap PLAY
+wait 100
+expect playing 0
