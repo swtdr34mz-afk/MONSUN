@@ -207,6 +207,7 @@ static struct {
     uint8_t intro;                       /* die Eröffnung läuft */
     uint32_t intro_at, frame;
     int32_t peak_drawn;
+    int bat_drawn;
     uint8_t dest[3], msel[3];            /* je Modulator: das Ziel und der Step, die gerade bearbeitet werden */
     uint8_t ssel;                        /* der Step im Sequencer-Editor */
     uint8_t rec;                         /* RECORD auf den SEQ-Seiten */
@@ -1666,6 +1667,42 @@ static void draw_oled(void)
     oled_glass();
 }
 
+/* ---- der Akku: ein kleines Batteriesymbol mit drei Segmenten (plat_battery: 0..3; 4: USB versorgt das FM-1, dann
+ *      ein Blitz; -1: noch nicht gelesen, nur der Umriss). Ein leerer Akku blinkt rot ---- */
+static void draw_battery(float x, float y)
+{
+    int b = plat_battery(), i;
+    col3 teal = c3(C_TEAL), frame = b < 0 ? rgb3(70, 72, 76) : rgb3(170, 172, 178);
+    float w = 19.0f, h = 8.0f;
+    rrect((int32_t)x, (int32_t)y, (int32_t)w, (int32_t)h, 2.0f, frame, mix3(frame, rgb3(0, 0, 0), 0.25f), 1.0f);
+    rrect((int32_t)x + 1, (int32_t)y + 1, (int32_t)w - 2, (int32_t)h - 2, 1.5f, rgb3(10, 10, 12), rgb3(16, 16, 18), 1.0f);
+    rrect((int32_t)(x + w), (int32_t)y + 2, 2, (int32_t)h - 4, 0.8f, frame, frame, 1.0f);   /* der Pol */
+    if (b == 4) {                        /* USB: ein Blitz, der Akku wird geladen oder nicht gebraucht */
+        aa_line(x + 10.5f, y + 1.5f, x + 7.5f, y + 4.2f, teal, 1.0f);
+        aa_line(x + 7.5f, y + 4.2f, x + 11.0f, y + 4.0f, teal, 1.0f);
+        aa_line(x + 11.0f, y + 4.0f, x + 8.0f, y + 6.6f, teal, 1.0f);
+        bloom(x + 9.5f, y + 4.0f, 6.0f, teal, 0.35f);
+        return;
+    }
+    if (b < 0)
+        return;
+    if (b == 0) {                        /* leer: ein roter Rest, der blinkt */
+        if ((plat_ms() / 500u) & 1u) {
+            rrect((int32_t)x + 2, (int32_t)y + 2, 3, (int32_t)h - 4, 0.8f, c3(C_RED), c3(C_RED), 1.0f);
+            bloom(x + 3.5f, y + 4.0f, 5.0f, c3(C_RED), 0.5f);
+        }
+        return;
+    }
+    for (i = 0; i < 3; i++) {            /* die Segmente: voll türkis, ein letztes gelb */
+        col3 c = b == 1 ? c3(C_YEL) : teal;
+        int on = i < b;
+        rrect((int32_t)x + 2 + i * 5, (int32_t)y + 2, 4, (int32_t)h - 4, 0.8f,
+              on ? mix3(c, rgb3(255, 255, 255), 0.25f) : rgb3(34, 36, 38), on ? c : rgb3(28, 30, 32), 1.0f);
+    }
+    if (b >= 1)
+        bloom(x + 2.0f + (float)b * 2.5f, y + 4.0f, 7.0f, b == 1 ? c3(C_YEL) : teal, 0.18f);
+}
+
 /* ---- der Kopf: der Name leuchtet, der Platz, ein Pegel, das Tempo, der Transport ---- */
 static void draw_head(uint32_t now)
 {
@@ -1675,14 +1712,14 @@ static void draw_head(uint32_t now)
     cv_begin(240, 30, C_PANEL);
     panel_bg(0, 30, 0);
     if (now < ui.msg_until) {
-        x = cv_text(8, 7, &FONT_B, ui.msg[0], C_WHITE);
-        text_glow(x + 8, 7, &FONT_B, ui.msg[1], C_YEL, C_YEL_DIM);
+        x = cv_text(8, 3, &FONT_B, ui.msg[0], C_WHITE);
+        text_glow(x + 8, 3, &FONT_B, ui.msg[1], C_YEL, C_YEL_DIM);
     } else {
         {   /* der Name leuchtet; mit GROOVE pulsiert er mit der Pumpe */
             float pulse = set.grv.on && ui.playing ? (1.0f - eng.sc_now) : 0.0f;
-            bloom(36.0f, 14.0f, 34.0f + 10.0f * pulse, yel, 0.10f + 0.45f * pulse);
+            bloom(36.0f, 11.0f, 34.0f + 10.0f * pulse, yel, 0.10f + 0.45f * pulse);
         }
-        text_glow(8, 6, &FONT_B, "MONSUN", C_YEL, C_YEL_DIM);
+        text_glow(8, 2, &FONT_B, "MONSUN", C_YEL, C_YEL_DIM);
 
         x = 8 + text_w(&FONT_B, "MONSUN");
         cv_text(x + 6, 4, &FONT_XS, "MONO", C_WHITE);
@@ -1724,6 +1761,7 @@ static void draw_head(uint32_t now)
             rrect(217, 10, 10, 10, 2.0f, rgb3(150, 152, 158), rgb3(90, 92, 96), 1.0f);
         }
     }
+    draw_battery(9.0f, 19.0f);           /* der Akku, unter dem Namen, auf jeder Seite (auch bei Meldungen) */
     /* die Kante: eine gelbe Linie, die zu den Seiten verlischt */
     for (x = 4; x < 236; x++) {
         float d = ((float)x - 120.0f) / 116.0f;
@@ -2018,6 +2056,10 @@ void app_frame(void)
         ui.load_at = now;
         if (l != ui.load_shown)
             ui.load_shown = l;
+        if (plat_battery() != ui.bat_drawn || plat_battery() == 0) {   /* der Akku im Kopf (leer: er blinkt) */
+            ui.bat_drawn = plat_battery();
+            ui.redraw |= R_HEAD;
+        }
         /* bleibt die Last eine Sekunde über 88 %, rechnet die Stimme ohne Oversampling (ECO) weiter */
         if (plat_cpu_pct() > 88u && !eng.eco) {
             if (++ui.hot >= 2) {
