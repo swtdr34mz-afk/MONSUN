@@ -1,7 +1,11 @@
 # MONSUN in the host simulator:
 #   X0X_FONTSET=terminus python3 fm1-base/tools/build.py . --host, then build/host/monsun_host tests/basic.txt build/host
 splashshot splash.png
-wait 800
+wait 400
+shot intro1.png
+wait 900
+shot intro2.png
+wait 1300
 expect page 0
 expect slot 0
 expect bpm 118
@@ -12,7 +16,9 @@ wait 200
 expect note 60
 expect gate 1
 wav note.wav
-wait 600
+wait 300
+shot scope.png
+wait 300
 key 7 up
 wait 400
 wavstop
@@ -22,14 +28,19 @@ expect gate 0
 tap SEL
 wait 30
 expect page 1
+key 7 down 100
+wait 250
 turn SELECT 5
-wait 30
+wait 1000
 shot filter.png
+key 7 up
 # the filter envelope, then the amp envelope
+key 7 down 100
 tap ENV
-wait 30
+wait 120
 expect page 2
 shot fenv.png
+key 7 up
 tap ENV
 wait 30
 expect page 3

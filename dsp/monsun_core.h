@@ -201,6 +201,7 @@ typedef struct {
     mn_fx fx;
     float mono[256];
     float level_now;                     /* für die Anzeige */
+    float cut_hz;                        /* der Cutoff, wie er gerade steht (Anzeige) */
 } mn_engine;
 
 /* ------------------------------------------------------------- die Schnittstelle --- */

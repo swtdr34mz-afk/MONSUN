@@ -181,6 +181,8 @@ static const kdef PAGE_K[NPAGES][4] = {
     {{K_PARAM, P_SLEN}, {K_PARAM, P_SDVS}, {K_PARAM, P_SPROB}, {K_PARAM, P_SSWING}},
 };
 
+enum { R_HEAD = 1, R_MID = 2, R_OLED = 4, R_ALL = 7 };   /* was neu gezeichnet wird */
+
 static struct {
     char msg[2][24];
     uint32_t msg_until;
@@ -189,6 +191,9 @@ static struct {
     uint32_t knob_at[4], enc_at[NE];
     uint32_t keys, btn;
     uint8_t page, playing, hold, redraw;
+    uint8_t intro;                       /* die Eröffnung läuft */
+    uint32_t intro_at, frame;
+    int32_t peak_drawn;
     uint8_t dest[3], msel[3];            /* je Modulator: das Ziel und der Step, die gerade bearbeitet werden */
     uint8_t ssel;                        /* der Step im Sequencer-Editor */
     uint8_t rec;                         /* RECORD auf den SEQ-Seiten */
@@ -259,7 +264,7 @@ void app_say(const char *a, const char *b)
         ui.msg[1][i] = b[i];
     ui.msg[1][i] = 0;
     ui.msg_until = plat_ms() + 1200u;
-    ui.redraw = 1;
+    ui.redraw |= R_ALL;
     if (ann_on()) {
         t[0] = 0;
         text_cat(t, ui.msg[0]);
@@ -281,7 +286,7 @@ static void say_big(const char *a, const char *b)
         ui.big[1][i] = b[i];
     ui.big[1][i] = 0;
     ui.big_until = plat_ms() + 900u;
-    ui.redraw = 1;
+    ui.redraw |= R_ALL;
     if (ann_on()) {
         char t[44] = "";
         text_cat(t, ui.big[1]);
@@ -611,7 +616,7 @@ static void knob_turn(int k, int32_t e)
     if (d.kind == K_NONE)
         return;
     ui.knob_at[k] = plat_ms();
-    ui.redraw = 1;
+    ui.redraw |= R_ALL;
     switch (d.kind) {
     case K_PARAM: {
         const mn_param_info *pi = &MN_PARAMS[d.id];
@@ -677,7 +682,7 @@ static void page_set(int pg)
         ui.knob_at[i] = 0;
     ui.big_until = 0;
     ui.page = (uint8_t)pg;
-    ui.redraw = 1;
+    ui.redraw |= R_ALL;
     if (ui.rec && pg != PG_SEQ1 && pg != PG_SEQ2) {   /* die SEQ-Seiten verlassen: RECORD endet (wie am Typhon) */
         ui.rec = 0;
     }
@@ -731,7 +736,7 @@ static void play_toggle(void)
     ui.playing = (uint8_t)!ui.playing;
     e_play(ui.playing);
     dirty_at = plat_ms();
-    ui.redraw = 1;
+    ui.redraw |= R_ALL;
 }
 
 static void rec_key(int note, int vel)   /* RECORD: die Taste schreibt den Step und geht weiter (APPEND verlängert) */
@@ -803,7 +808,7 @@ static void button(uint32_t i)
     case B_REC:
         if (seqp) {
             ui.rec = (uint8_t)!ui.rec;
-            ui.redraw = 1;
+            ui.redraw |= R_ALL;
             app_say(ui.rec ? "RECORD" : "RECORD OFF", ui.rec ? "PLAY THE KEYS" : "");
         } else {
             ui.rec_t = plat_ms();
@@ -814,7 +819,7 @@ static void button(uint32_t i)
             ui.saving = 1;
             ui.save_slot = set.slot;
             ui.save_until = plat_ms() + 8000u;
-            ui.redraw = 1;
+            ui.redraw |= R_ALL;
         } else {
             ui.saving = 0;
             slot_save(ui.save_slot);
@@ -899,13 +904,13 @@ static void input(void)
         if (ui.saving) {
             ui.save_slot = (uint8_t)s;
             ui.save_until = plat_ms() + 8000u;
-            ui.redraw = 1;
+            ui.redraw |= R_ALL;
         } else {
             slot_load(s);
         }
     }
     if (keys != ui.keys || btn != ui.btn)
-        ui.redraw = 1;
+        ui.redraw |= R_ALL;
     ui.keys = keys;
     ui.btn = btn;
 }
@@ -935,455 +940,753 @@ static void lights(void)
 }
 
 /* ----------------------------------------------------------------- Zeichnen --- */
-/* Die Optik des Typhon: ein anthrazitfarbenes Panel, der Name in Gelb, schwarze Regler mit Silberkappe und einem
- * türkisen Bogen, unten das OLED in seinem gelben Rahmen (weiß auf schwarz). */
+/* Die Optik des Typhon, veredelt: ein Panel aus eloxiertem Aluminium in Anthrazit, der Name in leuchtendem Gelb,
+ * Regler mit gerändeltem Rock und gebürsteter Alukappe auf einem leuchtenden türkisen Ring, und unten das OLED in
+ * seinem gelben Rahmen, hinter Glas, mit lebendigen, leuchtenden Kurven (das echte Ausgangssignal, der Cutoff, die
+ * Hüllkurven und Modulatoren, wie sie gerade laufen). Alles kantengeglättet (ui_gfx.h). */
 #undef C_PANEL
 #define C_PANEL RGB(26, 26, 28)
 #undef C_YEL
-#define C_YEL RGB(250, 212, 30)
+#define C_YEL RGB(255, 212, 32)
 #undef C_YEL_DIM
-#define C_YEL_DIM RGB(110, 92, 16)
+#define C_YEL_DIM RGB(96, 76, 10)
 #undef C_TEAL
-#define C_TEAL RGB(110, 206, 202)
+#define C_TEAL RGB(96, 224, 216)
 #undef C_TEAL_DIM
-#define C_TEAL_DIM RGB(36, 66, 66)
+#define C_TEAL_DIM RGB(30, 62, 62)
 #undef C_WHITE
-#define C_WHITE RGB(236, 236, 236)
+#define C_WHITE RGB(238, 238, 240)
 #undef C_SUB
-#define C_SUB RGB(140, 140, 146)
+#define C_SUB RGB(130, 132, 138)
 #undef C_LINE
 #define C_LINE RGB(54, 54, 58)
-#undef C_KNOB
-#define C_KNOB RGB(16, 16, 18)
-#undef C_KEDGE
-#define C_KEDGE RGB(70, 70, 74)
-#undef C_SILVER
-#define C_SILVER RGB(176, 176, 182)
-#undef C_SILVER_HI
-#define C_SILVER_HI RGB(236, 236, 240)
-#undef C_OLED
-#define C_OLED RGB(0, 0, 0)
 #undef C_OLED_DIM
-#define C_OLED_DIM RGB(70, 70, 74)
+#define C_OLED_DIM RGB(78, 82, 86)
 #undef C_RED
-#define C_RED RGB(232, 70, 56)
+#define C_RED RGB(255, 72, 56)
+
+#include "ui_gfx.h"
+
+/* das Ausgangssignal fürs Oszilloskop (der Audio-Interrupt schreibt, die Anzeige liest) */
+#define SCOPE_N 1024u
+static float scope_ring[SCOPE_N];
+static volatile uint32_t scope_w;
+static volatile float out_peak;
 
 static void ctext(int32_t cx, int32_t y, const felucca_font_t *f, const char *s, uint16_t c)
 {
     cv_text(cx - text_w(f, s) / 2, y, f, s, c);
 }
 
-static void disc(int32_t cx, int32_t cy, int32_t r, uint16_t c)
+/* ein abgerundetes Rechteck: senkrechter Verlauf, glatte Ecken */
+static void rrect(int32_t x, int32_t y, int32_t w, int32_t h, float rad, col3 top, col3 bot, float a)
 {
-    int32_t dy;
-    for (dy = -r; dy <= r; dy++) {
-        int32_t w = 0;
-        while ((w + 1) * (w + 1) + dy * dy <= r * r)
-            w++;
-        cv_rect(cx - w, cy + dy, 2 * w + 1, 1, c);
+    int32_t i, j;
+    for (j = 0; j < h; j++) {
+        col3 c = mix3(top, bot, h > 1 ? (float)j / (float)(h - 1) : 0.0f);
+        float py = (float)j + 0.5f, cy = py < rad ? rad : py > (float)h - rad ? (float)h - rad : py;
+        if (!px_ok(0, y + j))
+            continue;
+        for (i = 0; i < w; i++) {
+            float px = (float)i + 0.5f, cx = px < rad ? rad : px > (float)w - rad ? (float)w - rad : px, cov = 1.0f;
+            if (cx != px && cy != py) {
+                float dx = px - cx, dy = py - cy;
+                cov = sat01(rad - fm_sqrtf(dx * dx + dy * dy) + 0.5f);
+            }
+            if (cov * a >= 0.996f) {
+                if (px_ok(x + i, y + j))
+                    px_put(x + i, y + j, c);
+            } else {
+                px_blend(x + i, y + j, c, cov * a);
+            }
+        }
     }
 }
 
-/* ein Bogen von a0 bis a1 (Grad, 0 = oben, im Uhrzeigersinn), Dicke th */
-static void arc(int32_t cx, int32_t cy, int32_t r, float a0, float a1, int32_t th, uint16_t c)
+/* eine Linie mit weißem Kern und farbigem Schein */
+static void neon(float x0, float y0, float x1, float y1, col3 halo, float a)
 {
-    float a, step;
-    if (a1 < a0) {
-        float t = a0;
-        a0 = a1;
-        a1 = t;
-    }
-    step = 180.0f / (3.14159f * (float)r) * 0.8f;
-    for (a = a0; a <= a1 + 0.01f; a += step) {
-        float rad = a * 0.017453293f, sn = fm_sinf(rad), cs = fm_cosf(rad);
-        int32_t t;
-        for (t = 0; t < th; t++)
-            cv_rect(cx + (int32_t)(sn * (float)(r - t) + (sn < 0 ? -0.5f : 0.5f)),
-                    cy - (int32_t)(cs * (float)(r - t) + (cs < 0 ? -0.5f : 0.5f)), 1, 1, c);
-    }
+    aa_line(x0, y0 - 1.0f, x1, y1 - 1.0f, halo, a * 0.35f);
+    aa_line(x0, y0 + 1.0f, x1, y1 + 1.0f, halo, a * 0.35f);
+    aa_line(x0, y0 - 2.0f, x1, y1 - 2.0f, halo, a * 0.10f);
+    aa_line(x0, y0 + 2.0f, x1, y1 + 2.0f, halo, a * 0.10f);
+    aa_line(x0, y0, x1, y1, mix3(halo, rgb3(255, 255, 255), 0.65f), a);
 }
 
-/* ein Typhon-Regler: der türkise Ring (dunkel die Spur, hell der Wert), schwarzer Körper, Silberkappe, Zeiger */
-static void typhon_knob(int32_t cx, int32_t cy, int32_t r, float v, int hot, int bip)
+/* eine Fläche unter einer Kurve: von oben (deutlich) nach unten (verschwindend) */
+static void fill_col(int32_t x, float ytop, float ybase, col3 c, float a)
 {
-    float a = -135.0f + 270.0f * fm_clampf(v, 0.0f, 1.0f), sn, cs;
-    int32_t i, cap = r * 10 / 20;
-    arc(cx, cy, r + 6, -135.0f, 135.0f, 3, C_TEAL_DIM);
-    arc(cx, cy, r + 6, bip ? 0.0f : -135.0f, a, 3, hot ? C_YEL : C_TEAL);
-    disc(cx, cy, r, hot ? C_SUB : C_KEDGE);
-    disc(cx, cy, r - 1, C_KNOB);
-    disc(cx, cy, cap, C_SILVER);
-    disc(cx - cap / 3, cy - cap / 3, cap / 2, C_SILVER_HI);
-    sn = fm_sinf(a * 0.017453293f);
-    cs = fm_cosf(a * 0.017453293f);
-    for (i = cap - 2; i < r - 1; i++)
-        cv_rect(cx + (int32_t)(sn * (float)i), cy - (int32_t)(cs * (float)i), 2, 2, C_WHITE);
+    int32_t y, y0 = (int32_t)(ytop < ybase ? ytop : ybase), y1 = (int32_t)(ytop < ybase ? ybase : ytop);
+    float span = (float)(y1 - y0) + 1.0f;
+    for (y = y0; y <= y1; y++)
+        px_blend(x, y, c, a * (1.0f - (float)(y - y0) / span * 0.85f));
+}
+
+/* ---- der Regler ---- */
+static void knob_pro(float cx, float cy, float r, float v, int hot, int bip)
+{
+    float va = -135.0f + 270.0f * sat01(v), rr = r + 7.0f, a0 = bip ? 0.0f : -135.0f, rc = r * 0.62f;
+    float ux = fm_sinf(va * 0.0174533f), uy = -fm_cosf(va * 0.0174533f);
+    col3 acc = c3(hot ? C_YEL : C_TEAL);
+    int32_t x, y, R = (int32_t)(r + 5.0f);
+    /* der Ring: die Spur, der Wert mit Schein, ein Lichtpunkt am Ende */
+    ring_arc(cx, cy, rr, 3.0f, -135.0f, 135.0f, c3(C_TEAL_DIM), 1.0f, 0.0f);
+    if (fabsf_(va - a0) > 0.8f)
+        ring_arc(cx, cy, rr, 3.0f, va < a0 ? va : a0, va < a0 ? a0 : va, acc, 1.0f, hot ? 6.0f : 4.0f);
+    bloom(cx + ux * rr, cy + uy * rr, hot ? 7.0f : 5.0f, acc, hot ? 0.9f : 0.6f);
+    aa_disc(cx + ux * rr, cy + uy * rr, 1.6f, rgb3(255, 255, 255), 0.95f);
+    /* Schatten, Rock, Kappe, Zeiger: ein Durchgang */
+    for (y = (int32_t)cy - R; y <= (int32_t)cy + R; y++)
+        for (x = (int32_t)cx - R; x <= (int32_t)cx + R; x++) {
+            float dx = (float)x + 0.5f - cx, dy = (float)y + 0.5f - cy, d = fm_sqrtf(dx * dx + dy * dy);
+            float sdx = dx - 1.5f, sdy = dy - 2.5f, sd = fm_sqrtf(sdx * sdx + sdy * sdy), cov, an, lam, proj, perp;
+            col3 c;
+            if (!px_ok(x, y))
+                continue;
+            if (sd < r + 3.0f)               /* der Schatten nach rechts unten */
+                px_blend(x, y, rgb3(0, 0, 0), sat01((r + 3.0f - sd) / 4.5f) * 0.55f);
+            if (d > r + 0.5f)
+                continue;
+            cov = sat01(r - d + 0.5f);
+            an = ang_deg(dx, dy);
+            lam = d > 0.5f ? -(dx + dy) * 0.7071f / d : 0.0f;   /* Licht von links oben */
+            if (d > rc) {                    /* der Rock: gerändelt, oben heller */
+                float kn = fm_cosf(an * 0.0174533f * 28.0f), edge = sat01((d - (r - 1.6f)) / 1.6f);
+                float g = 24.0f + 16.0f * lam + 7.0f * kn - 10.0f * edge + 26.0f * sat01(1.0f - (d - rc) / 1.4f) * sat01(lam + 0.3f);
+                c = rgb3(g, g, g + 2.0f);
+            } else {                         /* die Kappe: gebürstetes Aluminium mit Lichtband */
+                float br = fm_cosf((an + 45.0f) * 0.0349066f), g = 150.0f + 62.0f * br * br * (br > 0 ? 1.0f : 0.55f)
+                                                                     - 28.0f * (d / rc) + 18.0f * lam;
+                if (d > rc - 1.1f)
+                    g = 92.0f + 40.0f * lam;  /* der Rand der Kappe */
+                c = rgb3(g, g, g + 4.0f);
+            }
+            /* der Zeiger: weiß auf dem Rock, eine Kerbe in der Kappe */
+            proj = dx * ux + dy * uy;
+            perp = fabsf_(dx * uy - dy * ux);
+            if (proj > r * 0.18f && proj < r - 1.2f) {
+                float pc = sat01(1.25f - perp);
+                if (pc > 0.0f)
+                    c = mix3(c, d > rc ? rgb3(250, 250, 250) : rgb3(40, 40, 44), pc * (d > rc ? 1.0f : 0.8f));
+            }
+            px_blend(x, y, c, cov);
+        }
+}
+
+/* ---- ein Wertschild unter dem Regler ---- */
+static void value_pill(int32_t cx, int32_t y, const char *t, int hot)
+{
+    int32_t w = text_w(&FONT_XS, t) + 12;
+    if (w < 40)
+        w = 40;
+    if (hot)
+        rrect(cx - w / 2 - 1, y - 1, w + 2, 17, 8.5f, c3(C_YEL), c3(C_YEL_DIM), 0.85f);
+    rrect(cx - w / 2, y, w, 15, 7.5f, rgb3(10, 10, 12), rgb3(18, 18, 20), 1.0f);
+    ctext(cx, y + 2, &FONT_XS, t, hot ? C_YEL : C_WHITE);
 }
 
 static void draw_knob(int k, int32_t cx, int32_t y, uint32_t now)
 {
     kdef d = kdef_of(k);
-    int v = knob_get(d), hot = ui.knob_at[k] && now - ui.knob_at[k] < 600u;
+    int v = knob_get(d), hot = ui.knob_at[k] && now - ui.knob_at[k] < 700u;
     char t[20];
     if (v < 0 || d.kind == K_NONE)
         return;
-    ctext(cx, y, &FONT_XS, knob_label(d), hot ? C_YEL : C_WHITE);
-    typhon_knob(cx, y + 38, 15, (float)v / 127.0f, hot, knob_bip(d));
+    if (hot)
+        text_glow(cx - text_w(&FONT_XS, knob_label(d)) / 2, y, &FONT_XS, knob_label(d), C_YEL, C_YEL_DIM);
+    else
+        ctext(cx, y, &FONT_XS, knob_label(d), C_WHITE);
+    knob_pro((float)cx, (float)(y + 38), 15.0f, (float)v / 127.0f, hot, knob_bip(d));
     val_text(d, t);
-    ctext(cx, y + 64, &FONT_XS, t, hot ? C_YEL : C_SUB);
+    value_pill(cx, y + 66, t, hot);
 }
 
-/* ---- das OLED unten: was zur Seite gehört ---- */
-static void oled_frame(void)
+/* ---- die Seitengruppen: kleine Leuchtpunkte, wo man in der Gruppe ist ---- */
+static void group_of(int pg, int *i, int *n)
 {
-    cv_rect(4, 2, 232, 96, C_YEL);
-    cv_rect(6, 4, 228, 92, C_OLED);
+    static const uint8_t G0[NPAGES] = {0, 0, 0, 1, 0, 1, 2, 3, 4, 5, 0, 1, 0, 1, 2, 3, 0, 1, 0, 1};
+    static const uint8_t GN[NPAGES] = {1, 1, 2, 2, 6, 6, 6, 6, 6, 6, 2, 2, 4, 4, 4, 4, 2, 2, 2, 2};
+    *i = G0[pg];
+    *n = GN[pg];
 }
 
-static void env_curve(int32_t x0, int32_t y0, int32_t w, int32_t h, int a, int dd, int s, int r, int tm, uint16_t c)
+/* ---- das OLED ---- */
+#define OX0 7
+#define OY0 5
+#define OX1 233
+#define OY1 95
+
+static void oled_bezel(void)
 {
-    /* die Stufen auf eine gemeinsame Zeitachse (gestaucht), S als Plateau */
-    float sc = tm < 64 ? fm_exp2f(-((float)tm - 64.0f) / 63.0f * 3.3219f) : fm_exp2f(-((float)tm - 64.0f) / 63.0f * 2.585f);
-    float ta = mn_env_ms(a, 1) * sc, td = mn_env_ms(dd, 0) * sc, tr = mn_env_ms(r, 0) * sc, ts = 300.0f;
-    float wa, wd, ws, wr, tot, sl = (float)s / 127.0f;
-    int32_t xa, xd, xs, xr, ys = y0 + h - (int32_t)(sl * (float)h);
-    wa = fm_sqrtf(ta);
-    wd = fm_sqrtf(td);
-    ws = fm_sqrtf(ts);
-    wr = fm_sqrtf(tr);
-    tot = wa + wd + ws + wr;
-    xa = x0 + (int32_t)(wa / tot * (float)w);
-    xd = xa + (int32_t)(wd / tot * (float)w);
-    xs = xd + (int32_t)(ws / tot * (float)w);
-    xr = x0 + w;
-    cv_line(x0, y0 + h, xa, y0, c);
-    {   /* Abfall (exponentiell angenähert) */
-        int32_t i, px = xa, py = y0;
-        for (i = 1; i <= 12; i++) {
-            float f = (float)i / 12.0f, lv = sl + (1.0f - sl) * fm_exp2f(-f * 6.0f);
-            int32_t nx = xa + (int32_t)((float)(xd - xa) * f), ny = y0 + h - (int32_t)(lv * (float)h);
-            cv_line(px, py, nx, ny, c);
-            px = nx;
-            py = ny;
+    rrect(2, 0, 236, 100, 8.0f, rgb3(255, 226, 70), rgb3(196, 150, 6), 1.0f);   /* der gelbe Rahmen */
+    rrect(5, 3, 230, 94, 5.0f, rgb3(10, 10, 12), rgb3(0, 0, 0), 1.0f);         /* das schwarze Glas */
+}
+
+static void oled_glass(void)             /* ein Hauch Spiegelung oben auf dem Glas */
+{
+    int32_t x, y;
+    for (y = OY0; y < OY0 + 22; y++) {
+        float a = 0.045f * (1.0f - (float)(y - OY0) / 22.0f);
+        for (x = OX0 + 2; x < OX1 - 2; x++)
+            px_glow(x, y, rgb3(255, 255, 255), a * (0.6f + 0.4f * (float)(OX1 - x) / 226.0f) * 0.25f);
+    }
+}
+
+static void oled_grid(void)              /* ein feines Raster wie auf einem Oszilloskop */
+{
+    int32_t x, y;
+    for (y = 14; y <= 86; y += 12)
+        for (x = 12; x <= 228; x += 4)
+            px_blend(x, y, rgb3(60, 90, 90), y == 50 ? 0.55f : 0.28f);
+}
+
+static void oled_title(const char *a, const char *b)
+{
+    int32_t x = cv_text(12, 7, &FONT_XS, a, C_OLED_DIM);
+    if (b)
+        text_glow(x + 6, 7, &FONT_XS, b, C_WHITE, RGB(20, 60, 60));
+}
+
+/* eine Wellenform-Vorschau (ohne Signal: so sieht die WAVE-Stellung aus) */
+static float wave_preview(float ph, int wi, float r2)
+{
+    float p1 = ph - (float)(int)ph, p2 = ph * r2;
+    p2 -= (float)(int)p2;
+    switch (wi) {
+    case 0: return 1.0f - 4.0f * fabsf_(p1 - 0.5f);
+    case 1: return 2.0f * p1 - 1.0f;
+    case 2: return (2.0f * p1 - 1.0f + 2.0f * p2 - 1.0f) * 0.5f;
+    case 3: return (2.0f * p1 - 1.0f + (p2 < 0.5f ? 1.0f : -1.0f)) * 0.5f;
+    case 4: return ((p1 < 0.5f ? 1.0f : -1.0f) + (p2 < 0.5f ? 1.0f : -1.0f)) * 0.5f;
+    case 5: return p1 < 0.16f ? 1.0f : -0.6f;
+    default: {
+        float m = 1.0f - 4.0f * fabsf_(p2 - 0.5f), q = p1 + (wi == 6 ? 0.12f : 0.35f) * m;
+        q -= (float)(int)q;
+        if (q < 0.0f)
+            q += 1.0f;
+        return 1.0f - 4.0f * fabsf_(q - 0.5f);
+    }
+    }
+}
+
+static void oled_scope(void)             /* PANEL: das echte Ausgangssignal, auf einen Nulldurchgang getriggert */
+{
+    uint32_t w = scope_w, i, start = w - 240u, best = w - 240u;
+    float pk = 0.0f, g, px = 0, py = 0;
+    int wi = mn_wave_index(edit.p[P_WAVE]), j;
+    col3 teal = c3(C_TEAL);
+    for (i = w - 600u; i != w - 240u; i++) {   /* der letzte steigende Nulldurchgang vor dem Fenster */
+        float a = scope_ring[(i - 1u) % SCOPE_N], b = scope_ring[i % SCOPE_N];
+        if (a <= 0.0f && b > 0.0f)
+            best = i;
+    }
+    start = best;
+    for (j = 0; j < 216; j++) {
+        float v = fabsf_(scope_ring[(start + (uint32_t)j) % SCOPE_N]);
+        if (v > pk)
+            pk = v;
+    }
+    oled_grid();
+    if (pk < 0.002f) {                   /* still: die Form der WAVE-Stellung, gedimmt */
+        float r2 = fm_exp2f(mn_tune2_semis(edit.p[P_TUNE2]) / 12.0f);
+        for (j = 0; j <= 216; j += 2) {
+            float y = 50.0f - wave_preview((float)j / 108.0f, wi, r2) * 28.0f, x = 12.0f + (float)j;
+            if (j)
+                neon(px, py, x, y, teal, 0.45f);
+            px = x;
+            py = y;
         }
-        cv_line(px, py, xs, ys, c);
-        px = xs;
-        py = ys;
-        for (i = 1; i <= 12; i++) {
-            float f = (float)i / 12.0f, lv = sl * fm_exp2f(-f * 6.0f);
-            int32_t nx = xs + (int32_t)((float)(xr - xs) * f), ny = y0 + h - (int32_t)(lv * (float)h);
-            cv_line(px, py, nx, ny, c);
-            px = nx;
-            py = ny;
+    } else {
+        g = 34.0f / (pk < 0.08f ? 0.08f : pk);
+        for (j = 0; j < 216; j++) {
+            float y = 50.0f - scope_ring[(start + (uint32_t)j) % SCOPE_N] * g, x = 12.0f + (float)j;
+            y = y < 10.0f ? 10.0f : y > 90.0f ? 90.0f : y;
+            fill_col((int32_t)x, y, 50.0f, teal, 0.10f);
+            if (j)
+                neon(px, py, x, y, teal, 1.0f);
+            px = x;
+            py = y;
         }
     }
-    (void)xr;
+    oled_title("WAVE", MN_WAVE_NAME[wi]);
 }
 
-static void oled_wave(void)              /* die Wellenform der WAVE-Stellung (zwei Perioden) */
+static void oled_filter(void)            /* die Filterkurve, wie sie gerade wirklich steht (Hüllkurve, Modulatoren, Tasten):
+                                          * sie atmet mit; wo der CUTOFF-Regler steht, zeigt eine blasse Linie */
 {
-    int32_t x, px = 0, py = 0;
-    int wi = mn_wave_index(edit.p[P_WAVE]);
-    for (x = 0; x < 200; x++) {
-        float ph = (float)x / 100.0f, y;
-        float p1 = ph - (float)(int)ph;
-        float t2 = mn_tune2_semis(edit.p[P_TUNE2]), r2 = fm_exp2f(t2 / 12.0f), p2 = ph * r2;
-        p2 -= (float)(int)p2;
-        switch (wi) {
-        case 0: y = 1.0f - 4.0f * fabsf_(p1 - 0.5f); break;
-        case 1: y = 2.0f * p1 - 1.0f; break;
-        case 2: y = (2.0f * p1 - 1.0f + 2.0f * p2 - 1.0f) * 0.5f; break;
-        case 3: y = (2.0f * p1 - 1.0f + (p2 < 0.5f ? 1.0f : -1.0f)) * 0.5f; break;
-        case 4: y = ((p1 < 0.5f ? 1.0f : -1.0f) + (p2 < 0.5f ? 1.0f : -1.0f)) * 0.5f; break;
-        case 5: y = p1 < 0.16f ? 1.0f : -0.6f; break;
-        default: {
-            float m = 1.0f - 4.0f * fabsf_(p2 - 0.5f), q = p1 + (wi == 6 ? 0.12f : 0.35f) * m;
-            q -= (float)(int)q;
-            if (q < 0.0f)
-                q += 1.0f;
-            y = 1.0f - 4.0f * fabsf_(q - 0.5f);
-            break;
-        }
-        }
-        {
-            int32_t nx = 20 + x, ny = 50 - (int32_t)(y * 26.0f);
-            if (x)
-                cv_line(px, py, nx, ny, C_WHITE);
-            px = nx;
-            py = ny;
-        }
-    }
-    cv_text(12, 8, &FONT_XS, "WAVE", C_OLED_DIM);
-    cv_text(50, 8, &FONT_XS, MN_WAVE_NAME[wi], C_WHITE);
-}
-
-static void oled_filter(void)            /* die Filterkurve: flach bis zum Cutoff, die Resonanz als Spitze */
-{
-    float fc = (float)edit.p[P_CUTOFF] / 127.0f, q = (float)edit.p[P_RESON] / 127.0f;
-    float hp = edit.p[P_HPCUT] ? 0.43f + (float)edit.p[P_HPCUT] / 127.0f : 0.0f;
-    int32_t x, px = 0, py = 0;
-    for (x = 0; x <= 210; x++) {
-        float f = (float)x / 210.0f, d = (f - fc) * 10.0f, db;
-        if (d < 0.0f)
-            db = q * 18.0f * fm_exp2f(d * 3.0f);
-        else
-            db = q * 18.0f * fm_exp2f(-d * 6.0f) - d * 24.0f;
+    float knob = (float)edit.p[P_CUTOFF] / 127.0f, q = (float)edit.p[P_RESON] / 127.0f;
+    float hp = edit.p[P_HPCUT] ? (float)edit.p[P_HPCUT] / 127.0f : 0.0f, px = 0, py = 0, fc, peak_y = 90.0f, peak_x = 14.0f;
+    col3 teal = c3(C_TEAL), yel = c3(C_YEL);
+    int32_t x, y;
+    fc = eng.cut_hz > 0.0f && eng.ae.stage ? sat01(fm_log2f(eng.cut_hz / 20.0f) / 10.0f) : knob;
+    oled_grid();
+    for (y = 12; y < 90; y += 3)         /* der Regler: gestrichelt */
+        px_blend(14 + (int32_t)(knob * 212.0f), y, yel, 0.35f);
+    for (x = 0; x <= 212; x++) {
+        float f = (float)x / 212.0f, d = (f - fc) * 10.0f, db, yy;
+        db = d < 0.0f ? q * 18.0f * fm_exp2f(d * 3.0f) : q * 18.0f * fm_exp2f(-d * 6.0f) - d * 24.0f;
         if (hp > 0.0f && f < hp)
             db -= (hp - f) * 120.0f;
-        {
-            int32_t nx = 15 + x, ny = 46 - (int32_t)(db * 1.1f);
-            ny = ny < 8 ? 8 : ny > 90 ? 90 : ny;
-            if (x)
-                cv_line(px, py, nx, ny, C_WHITE);
-            px = nx;
-            py = ny;
+        yy = 44.0f - db * 1.1f;
+        yy = yy < 10.0f ? 10.0f : yy > 90.0f ? 90.0f : yy;
+        if (yy < peak_y) {
+            peak_y = yy;
+            peak_x = 14.0f + (float)x;
         }
+        fill_col(14 + x, yy, 90.0f, teal, 0.13f);
+        if (x)
+            neon(px, py, 14.0f + (float)x, yy, teal, 1.0f);
+        px = 14.0f + (float)x;
+        py = yy;
     }
-    cv_text(12, 8, &FONT_XS, "VCF 24DB LP", C_OLED_DIM);
+    if (q > 0.08f) {                     /* die Resonanzspitze glüht */
+        bloom(peak_x, peak_y, 6.0f + q * 6.0f, yel, 0.5f + 0.4f * q);
+        aa_disc(peak_x, peak_y, 2.0f, rgb3(255, 255, 230), 1.0f);
+    }
+    {
+        char t[16];
+        hz_text(eng.cut_hz > 0.0f && eng.ae.stage ? eng.cut_hz : mn_cutoff_hz(edit.p[P_CUTOFF]), t);
+        oled_title("VCF 24DB LP", t);
+    }
 }
 
+/* eine ADSR-Kurve; dazu wo die Hüllkurve gerade steht */
 static void oled_env(int filt)
 {
-    if (filt)
-        env_curve(16, 18, 208, 66, edit.p[P_FA], edit.p[P_FD], edit.p[P_FS], edit.p[P_FR], edit.p[P_FTIME], C_WHITE);
-    else
-        env_curve(16, 18, 208, 66, edit.p[P_AA], edit.p[P_AD], edit.p[P_AS], edit.p[P_AR], edit.p[P_ATIME], C_WHITE);
-    cv_text(12, 8, &FONT_XS, filt ? "FILTER ADSR" : "AMP ADSR", C_OLED_DIM);
+    const uint8_t *p = edit.p;
+    int a = filt ? p[P_FA] : p[P_AA], dd = filt ? p[P_FD] : p[P_AD], s = filt ? p[P_FS] : p[P_AS];
+    int r = filt ? p[P_FR] : p[P_AR], tm = filt ? p[P_FTIME] : p[P_ATIME];
+    const mn_adsr *env = filt ? &eng.fe : &eng.ae;
+    float sc = tm < 64 ? fm_exp2f(-((float)tm - 64.0f) / 63.0f * 3.3219f) : fm_exp2f(-((float)tm - 64.0f) / 63.0f * 2.585f);
+    float wa = fm_sqrtf(mn_env_ms(a, 1) * sc), wd = fm_sqrtf(mn_env_ms(dd, 0) * sc), ws = fm_sqrtf(300.0f);
+    float wr = fm_sqrtf(mn_env_ms(r, 0) * sc), tot = wa + wd + ws + wr, sl = (float)s / 127.0f;
+    float X0 = 14.0f, W = 212.0f, Y0 = 16.0f, H = 70.0f, xa, xd, xs, xr, px = X0, py = Y0 + H;
+    col3 teal = c3(C_TEAL), yel = c3(C_YEL);
+    int i;
+    xa = X0 + wa / tot * W;
+    xd = xa + wd / tot * W;
+    xs = xd + ws / tot * W;
+    xr = X0 + W;
+    oled_grid();
+    for (i = 1; i <= 64; i++) {          /* die Kurve, Stück für Stück, mit Fläche */
+        float t = (float)i / 64.0f, x, lv;
+        x = X0 + t * W;
+        if (x <= xa)
+            lv = (x - X0) / (xa - X0 + 0.01f);
+        else if (x <= xd)
+            lv = sl + (1.0f - sl) * fm_exp2f(-(x - xa) / (xd - xa + 0.01f) * 6.0f);
+        else if (x <= xs)
+            lv = sl + (1.0f - sl) * 0.0156f;
+        else
+            lv = sl * fm_exp2f(-(x - xs) / (xr - xs + 0.01f) * 6.0f);
+        {
+            float y = Y0 + H - lv * H;
+            int32_t c;
+            for (c = (int32_t)px; c < (int32_t)x; c++)
+                fill_col(c, py + (y - py) * ((float)c - px) / (x - px + 0.01f), Y0 + H, teal, 0.12f);
+            neon(px, py, x, y, teal, 1.0f);
+            px = x;
+            py = y;
+        }
+    }
+    if (env->stage) {                    /* wo sie gerade steht: ein leuchtender Punkt */
+        float lv = env->level, x;
+        if (env->stage == 1)
+            x = X0 + (xa - X0) * lv;
+        else if (env->stage == 2)
+            x = sl < 0.999f ? xa + (xd - xa) * sat01((1.0f - lv) / (1.0f - sl + 1e-4f)) : xd;
+        else
+            x = xs + (xr - xs) * sat01(1.0f - lv / (sl > 0.02f ? sl : 0.02f));
+        bloom(x, Y0 + H - lv * H, 9.0f, yel, 0.9f);
+        aa_disc(x, Y0 + H - lv * H, 2.2f, rgb3(255, 255, 230), 1.0f);
+    }
+    oled_title(filt ? "FILTER ADSR" : "AMP ADSR", 0);
 }
 
 static void oled_mod(int m, int dest_page)
 {
-    int mode = mode_of(m), i, n = 0;
+    int mode = mode_of(m), i;
+    col3 teal = c3(C_TEAL), yel = c3(C_YEL);
     char t[24] = "M";
     t[1] = (char)('1' + m);
     t[2] = 0;
-    text_cat(t, " ");
-    text_cat(t, MN_MODE_NAME[mode]);
-    cv_text(12, 8, &FONT_XS, t, C_WHITE);
-    if (dest_page) {                     /* die Ziele mit ihrem LVL als Balken (das gewählte hell) */
+    if (dest_page) {                     /* die Ziele: Balken nach links und rechts, das gewählte gelb */
         for (i = 0; i < MN_NDEST; i++) {
             int v = edit.lvl[m][i], sel = i == ui.dest[m];
-            int32_t x = 12 + (i % 2) * 112, y = 20 + (i / 2) * 10, w;
+            int32_t x = 12 + (i % 2) * 112, y = 20 + (i / 2) * 10, w = (v - 64) * 32 / 63;
+            col3 c = sel ? yel : teal;
             cv_text(x, y, &FONT_XS, MN_DEST_NAME[i], sel ? C_YEL : v != 64 ? C_WHITE : C_OLED_DIM);
-            cv_rect(x + 34, y + 5, 64, 1, C_OLED_DIM);
-            w = (v - 64) * 32 / 63;
-            if (w > 0)
-                cv_rect(x + 66, y + 3, w, 5, sel ? C_YEL : C_TEAL);
-            else if (w < 0)
-                cv_rect(x + 66 + w, y + 3, -w, 5, sel ? C_YEL : C_TEAL);
-            n += v != 64;
+            px_blend(x + 66, y + 5, rgb3(90, 90, 96), 1.0f);
+            aa_line((float)(x + 34), (float)y + 5.5f, (float)(x + 98), (float)y + 5.5f, rgb3(50, 54, 58), 1.0f);
+            if (w) {
+                int32_t a0 = w > 0 ? x + 66 : x + 66 + w;
+                rrect(a0, y + 3, w > 0 ? w : -w, 5, 2.5f, c, mix3(c, rgb3(0, 0, 0), 0.3f), 1.0f);
+                bloom((float)(w > 0 ? a0 + w : a0), (float)y + 5.5f, 5.0f, c, sel ? 0.8f : 0.4f);
+            }
         }
-        (void)n;
+        text_cat(t, " DEST");
+        oled_title(t, MN_MODE_NAME[mode]);
         return;
     }
-    if (mode == MODE_STEP) {             /* die Step-Werte als Säulen */
+    if (mode == MODE_STEP) {             /* die Step-Werte als Säulen; die laufende leuchtet */
         int cnt = scount(m), cur = mn_mod_step(&eng, m) % cnt;
         for (i = 0; i < cnt; i++) {
-            int32_t w = 200 / cnt, x = 16 + i * w, h = edit.mstep[m][i] * 60 / 127;
-            uint16_t c = i == ui.msel[m] ? C_YEL : i == cur ? C_TEAL : C_WHITE;
-            cv_rect(x + 1, 86 - h, w - 3, h + 1, c);
+            int32_t w = 212 / cnt, x = 14 + i * w, h = edit.mstep[m][i] * 62 / 127;
+            col3 c = i == ui.msel[m] ? yel : teal;
+            float al = i == cur ? 1.0f : 0.55f;
+            if (h > 0)
+                rrect(x + 1, 88 - h, w - 3, h + 1, 2.0f, mix3(c, rgb3(255, 255, 255), i == cur ? 0.35f : 0.0f),
+                      mix3(c, rgb3(0, 0, 0), 0.55f), al);
+            if (i == cur)
+                bloom((float)x + (float)w * 0.5f, (float)(88 - h), 10.0f, c, 0.8f);
         }
+        oled_title(t, MN_MODE_NAME[mode]);
         return;
     }
-    {   /* LFO, Hüllkurve, Zufall: der Ausgang über die Zeit (ein Oszilloskop) */
-        int32_t x, px = 0, py = 0;
-        cv_rect(12, 54, 216, 1, C_OLED_DIM);
+    {   /* LFO, Hüllkurve, Zufall: der Ausgang über die Zeit, mit Fläche zur Nulllinie */
+        int32_t x;
+        float px = 0, py = 0;
+        oled_grid();
         for (x = 0; x < 96; x++) {
-            float v = ui.scope[m][(ui.scope_pos + x) % 96u];
-            int32_t nx = 14 + x * 22 / 10, ny = 54 - (int32_t)(v * 30.0f);
-            if (x)
-                cv_line(px, py, nx, ny, C_WHITE);
+            float v = ui.scope[m][(ui.scope_pos + (uint32_t)x) % 96u];
+            float nx = 14.0f + (float)x * 2.22f, ny = 50.0f - v * 32.0f;
+            int32_t c;
+            if (x) {
+                for (c = (int32_t)px; c < (int32_t)nx; c++)
+                    fill_col(c, py + (ny - py) * ((float)c - px) / (nx - px), 50.0f, teal, 0.16f);
+                neon(px, py, nx, ny, teal, 1.0f);
+            }
             px = nx;
             py = ny;
         }
+        bloom(px, py, 9.0f, yel, 0.9f);
+        aa_disc(px, py, 2.2f, rgb3(255, 255, 230), 1.0f);
+        oled_title(t, MN_MODE_NAME[mode]);
     }
 }
 
-static void oled_fx(void)                /* die Kette FX1 -> FX2 -> FX3, die Seite hell, die Mischung als Balken */
+static void oled_fx(void)                /* die Kette FX1 -> FX2 -> FX3: die Blöcke leuchten mit ihrer Mischung */
 {
     static const char *const T[3] = {"FX1", "FX2", "FX3"};
+    col3 teal = c3(C_TEAL), yel = c3(C_YEL);
     int i;
     for (i = 0; i < 3; i++) {
         int32_t x = 12 + i * 76;
         int on = ui.page == PG_FX1 + i || ui.page == PG_FXP;
         int mix = edit.p[i == 0 ? P_X1MIX : i == 1 ? P_X2MIX : P_X3MIX];
+        float lit = (float)mix / 127.0f;
         const char *nm = i == 0 ? MN_X1_NAME[mn_list_index(P_X1TYPE, edit.p[P_X1TYPE])]
                          : i == 1 ? MN_X2_NAME[mn_list_index(P_X2TYPE, edit.p[P_X2TYPE])]
                                   : MN_X3_NAME[mn_list_index(P_X3TYPE, edit.p[P_X3TYPE])];
-        cv_rect(x, 20, 66, 46, on ? C_WHITE : C_OLED_DIM);
-        cv_rect(x + 1, 21, 64, 44, C_OLED);
-        ctext(x + 33, 25, &FONT_XS, T[i], on ? C_YEL : C_OLED_DIM);
+        if (on)
+            rrect(x - 1, 17, 68, 52, 7.0f, yel, mix3(yel, rgb3(0, 0, 0), 0.5f), 0.9f);
+        rrect(x, 18, 66, 50, 6.0f, mix3(rgb3(14, 22, 24), teal, lit * 0.25f), rgb3(6, 8, 10), 1.0f);
+        if (lit > 0.01f)
+            bloom((float)x + 33.0f, 43.0f, 26.0f, teal, lit * 0.35f);
+        if (on)
+            text_glow(x + 33 - text_w(&FONT_XS, T[i]) / 2, 23, &FONT_XS, T[i], C_YEL, C_YEL_DIM);
+        else
+            ctext(x + 33, 23, &FONT_XS, T[i], C_OLED_DIM);
         ctext(x + 33, 42, &FONT_XS, nm, mix ? C_WHITE : C_OLED_DIM);
-        cv_rect(x + 4, 74, 58, 4, C_OLED_DIM);
-        cv_rect(x + 4, 74, mix * 58 / 127, 4, C_TEAL);
-        if (i < 2)
-            cv_line(x + 67, 43, x + 75, 43, C_WHITE);
+        rrect(x + 4, 76, 58, 5, 2.5f, rgb3(30, 34, 36), rgb3(30, 34, 36), 1.0f);
+        if (mix)
+            rrect(x + 4, 76, 4 + mix * 54 / 127, 5, 2.5f, mix3(teal, rgb3(255, 255, 255), 0.3f), teal, 1.0f);
+        if (i < 2) {
+            neon((float)(x + 67), 43.0f, (float)(x + 75), 43.0f, teal, 0.9f);
+        }
     }
     cv_text(12, 84, &FONT_XS, "MIX", C_OLED_DIM);
 }
 
-static void oled_seq(void)               /* 32 Steps in zwei Reihen: Note als Höhe, Pause leer, TIE verbunden */
+static void oled_seq(void)               /* 32 Steps: die Note als Höhe, Gate als Breite, TIE verbunden; der laufende leuchtet */
 {
     int i, len = mn_seq_len(&eng), cur = mn_step_now(&eng);
-    char t[28] = "";
+    col3 teal = c3(C_TEAL), yel = c3(C_YEL);
+    char t[28] = "", n[4];
     for (i = 0; i < MN_STEPS; i++) {
         const mn_step *s = &edit.seq[i];
         int32_t x = 12 + (i % 16) * 13, y = 8 + (i / 16) * 34;
         int in = i < len;
-        uint16_t c = !in ? C_OLED_DIM : i == cur ? C_TEAL : C_WHITE;
+        float al = in ? 1.0f : 0.25f;
         if (i == ui.ssel)
-            cv_rect(x - 1, y - 1, 13, 30, C_YEL);
-        cv_rect(x, y, 11, 28, C_OLED);
+            rrect(x - 2, y - 2, 15, 32, 3.0f, yel, mix3(yel, rgb3(0, 0, 0), 0.5f), 0.9f);
+        rrect(x - 1, y - 1, 13, 30, 2.5f, rgb3(12, 16, 18), rgb3(4, 6, 8), 1.0f);
         if (s->gate == MN_REST) {
-            cv_rect(x + 3, y + 24, 5, 1, c);
+            aa_line((float)x + 3.0f, (float)y + 24.5f, (float)x + 8.0f, (float)y + 24.5f, rgb3(90, 96, 100), al);
         } else {
-            int32_t h = 3 + (s->note - 24) * 22 / 72;
-            int32_t w = s->gate == MN_TIE ? 13 : 2 + s->gate * 8 / 127;
-            cv_rect(x, y + 26 - h, w > 11 && i % 16 == 15 ? 11 : w, 3, c);
+            float h = 3.0f + (float)(s->note - 24) * 21.0f / 72.0f;
+            int32_t w = s->gate == MN_TIE ? 13 : 3 + s->gate * 8 / 127;
+            col3 c = i == cur ? mix3(teal, rgb3(255, 255, 255), 0.5f) : teal;
+            if (w > 11 && i % 16 == 15)
+                w = 11;
+            rrect(x, y + 26 - (int32_t)h, w, 3, 1.5f, c, c, al * (0.45f + 0.55f * (float)s->vel / 127.0f));
+            if (i == cur)
+                bloom((float)x + 5.0f, (float)y + 27.0f - h, 9.0f, teal, 0.9f);
         }
     }
     note_text(edit.seq[ui.ssel].note, t);
     cv_text(12, 80, &FONT_XS, "STEP", C_OLED_DIM);
-    {
-        char n[4];
-        int_text(ui.ssel + 1, n);
-        cv_text(44, 80, &FONT_XS, n, C_WHITE);
+    int_text(ui.ssel + 1, n);
+    cv_text(44, 80, &FONT_XS, n, C_WHITE);
+    text_glow(66, 80, &FONT_XS, edit.seq[ui.ssel].gate == MN_REST ? "REST" : t, C_WHITE, RGB(20, 60, 60));
+    if (ui.rec) {
+        const char *r = ui.ssel + 1 >= len ? "APPEND" : "RECORD";
+        int32_t x = 222 - text_w(&FONT_XS, r);
+        if ((plat_ms() / 400u) & 1u)
+            bloom((float)x - 8.0f, 85.0f, 7.0f, c3(C_RED), 0.9f);
+        aa_disc((float)x - 8.0f, 85.0f, 3.0f, c3(C_RED), 1.0f);
+        text_glow(x, 80, &FONT_XS, r, C_RED, RGB(70, 12, 8));
+    } else if (ui.copied >= 0) {
+        text_glow(228 - text_w(&FONT_XS, "COPIED"), 80, &FONT_XS, "COPIED", C_YEL, C_YEL_DIM);
     }
-    cv_text(66, 80, &FONT_XS, edit.seq[ui.ssel].gate == MN_REST ? "REST" : t, C_WHITE);
-    if (ui.rec)
-        cv_text(228 - text_w(&FONT_XS, ui.ssel + 1 >= len ? "APPEND" : "RECORD"), 80, &FONT_XS,
-                ui.ssel + 1 >= len ? "APPEND" : "RECORD", C_RED);
-    else if (ui.copied >= 0)
-        cv_text(228 - text_w(&FONT_XS, "COPIED"), 80, &FONT_XS, "COPIED", C_YEL);
 }
 
 static void oled_glo(void)
 {
-    char t[32] = "BPM ";
-    int_text((int32_t)(mn_bpm(&eng) + 0.5f), t + 4);
-    if (eng.ext)
-        text_cat(t, "  MIDI CLOCK");
-    cv_text(12, 8, &FONT_XS, t, C_WHITE);
-    cv_text(12, 26, &FONT_XS, "KEYS", C_OLED_DIM);
+    char t[32] = "";
+    col3 teal = c3(C_TEAL);
+    int_text((int32_t)(mn_bpm(&eng) + 0.5f), t);
+    text_glow(14, 10, &APP_BIG_FONT, t, C_WHITE, RGB(20, 70, 70));
+    cv_text(16 + text_w(&APP_BIG_FONT, t), 28, &FONT_XS, eng.ext ? "BPM  MIDI CLOCK" : "BPM", C_TEAL);
+    cv_text(130, 12, &FONT_XS, "KEYS", C_OLED_DIM);
     {
-        char n[12] = "";
-        note_text(key_base(), n);
-        text_cat(n, " - ");
-        note_text(key_base() + NKEYS - 1, n + txt_len(n));
-        cv_text(60, 26, &FONT_XS, n, C_WHITE);
+        char nn[12] = "";
+        note_text(key_base(), nn);
+        text_cat(nn, "-");
+        note_text(key_base() + NKEYS - 1, nn + txt_len(nn));
+        cv_text(166, 12, &FONT_XS, nn, C_WHITE);
     }
-    cv_text(12, 44, &FONT_XS, "HOLD", C_OLED_DIM);
-    cv_text(60, 44, &FONT_XS, ui.hold ? "ON" : "OFF", C_WHITE);
-    {
+    cv_text(130, 28, &FONT_XS, "HOLD", C_OLED_DIM);
+    cv_text(166, 28, &FONT_XS, ui.hold ? "ON" : "OFF", ui.hold ? C_YEL : C_WHITE);
+    {   /* die Rechenlast als leuchtender Balken */
+        uint32_t cpu = plat_cpu_pct();
         char c[24] = "CPU ";
-        int_text((int32_t)plat_cpu_pct(), c + 4);
+        int_text((int32_t)cpu, c + 4);
         text_cat(c, "%");
         if (eng.eco)
-            text_cat(c, " ECO");
-        cv_text(12, 62, &FONT_XS, c, plat_cpu_pct() > 80u ? C_RED : C_WHITE);
+            text_cat(c, "  ECO");
+        cv_text(14, 56, &FONT_XS, c, cpu > 80u ? C_RED : C_WHITE);
+        rrect(14, 70, 212, 6, 3.0f, rgb3(30, 34, 36), rgb3(30, 34, 36), 1.0f);
+        rrect(14, 70, 6 + (int32_t)(cpu > 100u ? 100u : cpu) * 206 / 100, 6, 3.0f,
+              cpu > 80u ? c3(C_RED) : mix3(teal, rgb3(255, 255, 255), 0.3f), cpu > 80u ? c3(C_RED) : teal, 1.0f);
     }
-    cv_text(12, 80, &FONT_XS, "MONSUN V" APP_VERSION, C_OLED_DIM);
+    cv_text(14, 82, &FONT_XS, "MONSUN V" APP_VERSION, C_OLED_DIM);
+}
+
+static void oled_save(void)
+{
+    char t[24] = "TO ";
+    const mn_patch *p = slot_patch(ui.save_slot);
+    t[3] = (char)('0' + (ui.save_slot + 1) / 10);
+    t[4] = (char)('0' + (ui.save_slot + 1) % 10);
+    t[5] = 0;
+    bloom(120.0f, 40.0f, 60.0f, c3(C_YEL), 0.18f);
+    text_glow(120 - text_w(&FONT_B, "SAVE") / 2, 12, &FONT_B, "SAVE", C_YEL, C_YEL_DIM);
+    text_glow(120 - text_w(&APP_BIG_FONT, t) / 2, 32, &APP_BIG_FONT, t, C_WHITE, RGB(40, 40, 40));
+    ctext(120, 66, &FONT_XS, p->name, C_OLED_DIM);
+    ctext(120, 80, &FONT_XS, "PRESET: SLOT   SAVE: OK", C_OLED_DIM);
+}
+
+static int oled_animated(void)           /* diese Seiten bewegen sich: das OLED jeden zweiten Frame neu */
+{
+    return ui.page == PG_MAIN || ui.page == PG_FILTER || ui.page == PG_FENV || ui.page == PG_AENV
+           || ui.page == PG_SET1 || ui.page == PG_SET2 || mod_of_page(ui.page) >= 0
+           || ((ui.page == PG_SEQ1 || ui.page == PG_SEQ2) && ui.rec) || ui.page == PG_GLO1 || ui.page == PG_GLO2;
 }
 
 static void draw_oled(void)
 {
     int m = mod_of_page(ui.page);
-    oled_frame();
-    if (ui.saving) {                     /* SAVE: der Zielplatz */
-        char t[24] = "TO ";
-        const mn_patch *p = slot_patch(ui.save_slot);
-        t[3] = (char)('0' + (ui.save_slot + 1) / 10);
-        t[4] = (char)('0' + (ui.save_slot + 1) % 10);
-        t[5] = 0;
-        ctext(120, 14, &FONT_B, "SAVE", C_YEL);
-        ctext(120, 38, &FONT_B, t, C_WHITE);
-        ctext(120, 60, &FONT_XS, p->name, C_OLED_DIM);
-        ctext(120, 80, &FONT_XS, "PRESET: SLOT   SAVE: OK", C_OLED_DIM);
-        return;
-    }
-    if (m >= 0) {
+    oled_bezel();
+    if (ui.saving)
+        oled_save();
+    else if (m >= 0)
         oled_mod(m, (ui.page - PG_M1) & 1);
-        return;
-    }
-    switch (ui.page) {
-    case PG_MAIN: oled_wave(); break;
-    case PG_FILTER: oled_filter(); break;
-    case PG_FENV: oled_env(1); break;
-    case PG_AENV: oled_env(0); break;
-    case PG_SET1:
-    case PG_SET2: oled_env(0); break;
-    case PG_FX1:
-    case PG_FX2:
-    case PG_FX3:
-    case PG_FXP: oled_fx(); break;
-    case PG_SEQ1:
-    case PG_SEQ2: oled_seq(); break;
-    default: oled_glo(); break;
-    }
+    else
+        switch (ui.page) {
+        case PG_MAIN: oled_scope(); break;
+        case PG_FILTER: oled_filter(); break;
+        case PG_FENV: oled_env(1); break;
+        case PG_AENV:
+        case PG_SET1:
+        case PG_SET2: oled_env(0); break;
+        case PG_FX1:
+        case PG_FX2:
+        case PG_FX3:
+        case PG_FXP: oled_fx(); break;
+        case PG_SEQ1:
+        case PG_SEQ2: oled_seq(); break;
+        default: oled_glo(); break;
+        }
+    oled_glass();
 }
 
-static void draw(void)
+/* ---- der Kopf: der Name leuchtet, der Platz, ein Pegel, das Tempo, der Transport ---- */
+static void draw_head(uint32_t now)
 {
-    uint32_t now = plat_ms();
+    col3 teal = c3(C_TEAL), yel = c3(C_YEL);
     char t[24];
-    /* Kopf: der Name in Gelb wie am Panel, der Platz, Tempo, Transport; oder eine Meldung */
+    int32_t x;
     cv_begin(240, 30, C_PANEL);
+    panel_bg(0, 30, 0);
     if (now < ui.msg_until) {
-        int32_t x = cv_text(8, 6, &FONT_B, ui.msg[0], C_WHITE);
-        cv_text(x + 8, 6, &FONT_B, ui.msg[1], C_YEL);
+        x = cv_text(8, 7, &FONT_B, ui.msg[0], C_WHITE);
+        text_glow(x + 8, 7, &FONT_B, ui.msg[1], C_YEL, C_YEL_DIM);
     } else {
-        int32_t x = cv_text(8, 3, &FONT_B, "MONSUN", C_YEL);
+        bloom(36.0f, 14.0f, 34.0f, yel, 0.10f);
+        text_glow(8, 6, &FONT_B, "MONSUN", C_YEL, C_YEL_DIM);
+        x = 8 + text_w(&FONT_B, "MONSUN");
         cv_text(x + 6, 4, &FONT_XS, "MONO", C_WHITE);
-        cv_text(x + 6, 14, &FONT_XS, "SYNTH", C_WHITE);
+        cv_text(x + 6, 14, &FONT_XS, "SYNTH", C_SUB);
+        /* der Platz als Schild */
         t[0] = (char)('0' + (set.slot + 1) / 10);
         t[1] = (char)('0' + (set.slot + 1) % 10);
         t[2] = set.edited ? '*' : 0;
         t[3] = 0;
-        cv_text(132, 9, &FONT_XS, t, set.edited ? C_YEL : C_WHITE);
+        rrect(124, 6, 30, 18, 6.0f, set.edited ? mix3(yel, rgb3(0, 0, 0), 0.55f) : rgb3(56, 58, 62), rgb3(14, 14, 16), 1.0f);
+        rrect(125, 7, 28, 16, 5.0f, rgb3(16, 16, 18), rgb3(8, 8, 10), 1.0f);
+        ctext(139, 9, &FONT_XS, t, set.edited ? C_YEL : C_WHITE);
+        /* der Pegel: acht Segmente, türkis, gelb, rot */
+        {
+            float pk = out_peak, lv = fm_sqrtf(pk < 1.0f ? pk : 1.0f) * 8.0f;
+            int i;
+            for (i = 0; i < 8; i++) {
+                col3 c = i < 5 ? teal : i < 7 ? yel : c3(C_RED);
+                int on = (float)i < lv;
+                rrect(160 + i * 4, 9, 3, 12, 1.0f, on ? c : rgb3(40, 42, 44), on ? mix3(c, rgb3(0, 0, 0), 0.3f) : rgb3(30, 32, 34), 1.0f);
+                if (on)
+                    px_glow(161 + i * 4, 8, c, 0.4f);
+            }
+        }
         t[0] = 0;
         int_text((int32_t)(mn_bpm(&eng) + 0.5f), t);
-        cv_text(206 - text_w(&FONT_XS, t), 9, &FONT_XS, t, eng.ext ? C_TEAL : C_WHITE);
-        if (ui.playing) {
+        cv_text(212 - text_w(&FONT_XS, t), 9, &FONT_XS, t, eng.ext ? C_TEAL : C_WHITE);
+        if (ui.playing) {                /* Play: ein leuchtendes Dreieck */
             int32_t i;
-            for (i = 0; i < 6; i++)
-                cv_rect(214 + i, 9 + i, 1, 12 - 2 * i, C_TEAL);
+            bloom(222.0f, 15.0f, 9.0f, teal, 0.7f);
+            for (i = 0; i < 9; i++) {
+                int32_t hh = 12 - i * 4 / 3;
+                cv_rect(217 + i, 15 - hh / 2, 1, hh, C_TEAL);
+            }
         } else {
-            cv_rect(213, 10, 10, 10, C_SUB);
-        }
-        if (edit.p[P_STORM]) {           /* STORM an: ein kleiner Wirbel */
-            int32_t r = 2 + edit.p[P_STORM] * 5 / 127;
-            arc(160, 15, r + 2, 0.0f, 300.0f, 1, C_TEAL);
-            arc(160, 15, r, 120.0f, 400.0f, 1, C_TEAL);
+            rrect(217, 10, 10, 10, 2.0f, rgb3(150, 152, 158), rgb3(90, 92, 96), 1.0f);
         }
     }
-    cv_rect(4, 29, 232, 1, C_LINE);
+    /* die Kante: eine gelbe Linie, die zu den Seiten verlischt */
+    for (x = 4; x < 236; x++) {
+        float d = ((float)x - 120.0f) / 116.0f;
+        px_blend(x, 29, yel, 0.55f * (1.0f - d * d));
+    }
     cv_blit(0, 0);
-    /* die Mitte: die Seite und ihre vier Regler (oder groß: CUTOFF / STORM / ein Preset) */
+}
+
+/* ---- die Mitte: die Seite und ihre vier Regler ---- */
+static void draw_mid(uint32_t now)
+{
+    int gi, gn, i;
     cv_begin(240, 110, C_PANEL);
+    panel_bg(0, 110, 30);
     {
-        int32_t x = cv_text(8, 3, &FONT_XS, PAGE_NAME[ui.page], C_YEL);
+        int32_t x = 8 + text_w(&FONT_XS, PAGE_NAME[ui.page]);
+        text_glow(8, 3, &FONT_XS, PAGE_NAME[ui.page], C_YEL, C_YEL_DIM);
         cv_text(x + 8, 3, &FONT_XS, edit.name, C_SUB);
-        {
-            int32_t i, bx = 232 - 4 * 9;   /* die vier Regler: welche Seite */
-            int m = mod_of_page(ui.page);
-            if (m >= 0)
-                for (i = 0; i < 3; i++)
-                    cv_rect(bx + i * 12, 6, 8, 4, i == m ? C_YEL : C_LINE);
+    }
+    group_of(ui.page, &gi, &gn);
+    for (i = 0; i < gn && gn > 1; i++) {     /* wo in der Gruppe: Leuchtpunkte */
+        float x = 232.0f - (float)(gn - 1 - i) * 9.0f;
+        if (i == gi) {
+            bloom(x, 7.5f, 5.0f, c3(C_YEL), 0.8f);
+            aa_disc(x, 7.5f, 2.4f, c3(C_YEL), 1.0f);
+        } else {
+            aa_disc(x, 7.5f, 2.0f, rgb3(70, 72, 76), 1.0f);
         }
     }
     if (now < ui.big_until) {
-        ctext(120, 24, &FONT_XS, ui.big[1], C_SUB);
-        ctext(120, 42, &APP_BIG_FONT, ui.big[0], C_YEL);
+        bloom(120.0f, 56.0f, 70.0f, c3(C_YEL), 0.12f);
+        ctext(120, 26, &FONT_XS, ui.big[1], C_SUB);
+        text_glow(120 - text_w(&APP_BIG_FONT, ui.big[0]) / 2, 44, &APP_BIG_FONT, ui.big[0], C_YEL, C_YEL_DIM);
     } else {
-        int i;
         for (i = 0; i < 4; i++)
             draw_knob(i, 33 + i * 58, 16, now);
     }
     cv_blit(0, 30);
-    /* unten: das OLED */
-    cv_begin(240, 100, C_PANEL);
-    draw_oled();
-    cv_blit(0, 140);
+}
+
+static void draw(uint32_t mask)
+{
+    uint32_t now = plat_ms();
+    if (mask & R_HEAD)
+        draw_head(now);
+    if (mask & R_MID)
+        draw_mid(now);
+    if (mask & R_OLED) {
+        cv_begin(240, 100, C_PANEL);
+        panel_bg(0, 100, 140);
+        draw_oled();
+        cv_blit(0, 140);
+    }
+}
+
+/* ---- die Eröffnung: Regen fällt, ein Monsun-Wirbel dreht sich auf, der Name glüht auf ---- */
+#define INTRO_MS 2400u
+static void intro_scene(float t, int32_t y0, int32_t h)
+{
+    col3 teal = c3(C_TEAL), yel = c3(C_YEL);
+    float grow = sat01(t / 0.9f), ease = 1.0f - (1.0f - grow) * (1.0f - grow) * (1.0f - grow);
+    float logo = sat01((t - 0.8f) / 0.6f), sub = sat01((t - 1.35f) / 0.5f);
+    int i;
+    cv_oy = -y0;                          /* in Bildschirmkoordinaten zeichnen: dieser Streifen ist y0 .. y0+h */
+    panel_bg(y0, h, y0);
+    for (i = 0; i < 46; i++) {           /* der Regen: schräge Striche, die verschieden schnell fallen */
+        uint32_t s = (uint32_t)i * 2654435761u;
+        float x = (float)(s % 260u) - 10.0f, sp = 160.0f + (float)((s >> 8) % 140u), len = 8.0f + (float)((s >> 16) % 14u);
+        float y = fmod_pos(t * sp + (float)((s >> 4) % 300u), 300.0f) - 30.0f, a = 0.10f + 0.22f * (float)((s >> 20) % 10u) / 10.0f;
+        if (y + len < (float)y0 || y > (float)(y0 + h))
+            continue;
+        aa_line(x, y, x - len * 0.25f, y + len, mix3(teal, rgb3(255, 255, 255), 0.4f), a * (1.0f - 0.6f * logo));
+    }
+    for (i = 0; i < 5; i++) {            /* der Wirbel */
+        float r = (14.0f + (float)i * 11.0f) * ease, rot = t * (110.0f + 45.0f * (float)i) * (i & 1 ? -1.0f : 1.0f) + (float)i * 70.0f;
+        if (r < 2.0f || 96.0f + r < (float)y0 - 8.0f || 96.0f - r > (float)(y0 + h) + 8.0f)
+            continue;
+        ring_arc(120.0f, 96.0f, r, i == 0 ? 3.5f : 3.0f, rot, rot + 200.0f + (float)i * 15.0f,
+                 i & 1 ? mix3(teal, rgb3(0, 0, 0), 0.45f) : teal, ease, 5.0f);
+    }
+    if (96 + 30 > y0 && 96 - 30 < y0 + h) {
+        bloom(120.0f, 96.0f, 26.0f + 6.0f * fm_sinf(t * 9.0f), yel, 0.55f * ease);
+        aa_disc(120.0f, 96.0f, 5.5f * ease, yel, 1.0f);
+    }
+    if (logo > 0.0f) {                   /* der Name glüht auf */
+        col3 c = mix3(c3(C_PANEL), yel, logo);
+        uint16_t cc = c565(c), halo = c565(mix3(c3(C_PANEL), c3(C_YEL_DIM), logo));
+        bloom(120.0f, 176.0f, 80.0f, yel, 0.22f * logo * (1.4f - 0.4f * logo));
+        text_glow(120 - text_w(&APP_BIG_FONT, "MONSUN") / 2, 160, &APP_BIG_FONT, "MONSUN", cc, halo);
+    }
+    if (sub > 0.0f) {
+        ctext(120, 198, &FONT_XS, "MONO SYNTHESIZER", c565(mix3(c3(C_PANEL), c3(C_WHITE), sub)));
+        {
+            int32_t x;
+            for (x = 60; x < 180; x++) {
+                float d = ((float)x - 120.0f) / 60.0f;
+                px_blend(x, 213, yel, sub * 0.7f * (1.0f - d * d));
+            }
+        }
+        ctext(120, 220, &FONT_XS, "by swtdr34mz", c565(mix3(c3(C_PANEL), c3(C_SUB), sub)));
+    }
+    cv_oy = 0;
+}
+
+static void intro_draw(float t)
+{
+    cv_begin(240, 110, C_PANEL);
+    intro_scene(t, 0, 110);
+    cv_blit(0, 0);
+    cv_begin(240, 110, C_PANEL);
+    intro_scene(t, 110, 110);
+    cv_blit(0, 110);
+    cv_begin(240, 20, C_PANEL);
+    intro_scene(t, 220, 20);
+    cv_blit(0, 220);
 }
 
 /* ------------------------------------------------------------ der Vertrag --- */
@@ -1442,9 +1745,19 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
         n = 256u;
     midi_in();
     mn_render(&eng, bl, br, (int)n);
-    for (i = 0; i < n; i++) {
-        lr[2 * i] = (int32_t)(bl[i] * gain);
-        lr[2 * i + 1] = (int32_t)(br[i] * gain);
+    {
+        uint32_t w = scope_w;
+        float pk = out_peak * 0.92f;     /* der Pegel fürs Display: Spitze, langsam fallend */
+        for (i = 0; i < n; i++) {
+            float m = 0.5f * (bl[i] + br[i]), a = m < 0.0f ? -m : m;
+            lr[2 * i] = (int32_t)(bl[i] * gain);
+            lr[2 * i + 1] = (int32_t)(br[i] * gain);
+            scope_ring[(w + i) % SCOPE_N] = m;
+            if (a > pk)
+                pk = a;
+        }
+        scope_w = w + n;
+        out_peak = pk;
     }
 }
 
@@ -1455,21 +1768,10 @@ void app_panic(void)
     mn_all_off(&eng);
 }
 
-void app_splash(void)                    /* MONSUN in Gelb, ein türkiser Wirbel, wie das Panel */
+void app_splash(void)                    /* der Startbildschirm: das Ende der Eröffnung, still */
 {
-    int32_t i;
     lcd_fill(0, 0, 240, 240, C_PANEL);
-    cv_begin(240, 110, C_PANEL);
-    for (i = 0; i < 5; i++)              /* der Wirbel: Bögen, die sich nach innen drehen */
-        arc(120, 56, 48 - i * 9, (float)(i * 70), (float)(i * 70 + 250), 3, i & 1 ? C_TEAL_DIM : C_TEAL);
-    disc(120, 56, 5, C_YEL);
-    cv_blit(0, 24);
-    cv_begin(240, 106, C_PANEL);
-    ctext(120, 8, &APP_BIG_FONT, "MONSUN", C_YEL);
-    ctext(120, 52, &FONT_XS, "MONO SYNTHESIZER", C_WHITE);
-    cv_rect(70, 70, 100, 1, C_SUB);
-    ctext(120, 80, &FONT_XS, "by swtdr34mz", C_SUB);
-    cv_blit(0, 134);
+    intro_draw(3.0f);
 }
 
 void app_ui_init(void)
@@ -1477,15 +1779,30 @@ void app_ui_init(void)
     lcd_fill(0, 0, 240, 240, C_PANEL);
     touch_on(1);
     ui.step_drawn = -2;
-    ui.redraw = 1;
+    ui.intro = 1;
+    ui.intro_at = plat_ms();
+    ui.redraw = R_ALL;
 }
 
 void app_frame(void)
 {
     uint32_t now = plat_ms();
-    int32_t s, lv, m;
+    int32_t s, lv, m, pk;
+    if (ui.intro) {                      /* die Eröffnung: bis sie durch ist, oder eine Taste / ein Knopf drückt */
+        uint32_t t = now - ui.intro_at;
+        if (t < INTRO_MS && !plat_keys() && !plat_buttons()) {
+            intro_draw((float)t * 0.001f);
+            plat_lights(0, 0, 0, 0, 0);
+            return;
+        }
+        ui.intro = 0;
+        ui.keys = plat_keys();           /* die Taste, die abgebrochen hat, spielt nicht */
+        ui.btn = plat_buttons();
+        ui.redraw = R_ALL;
+    }
     input();
     lights();
+    ui.frame++;
     if (ann_on() && ann_where()) {
         char t[48] = "MONSUN. ";
         text_cat(t, PAGE_NAME[ui.page]);
@@ -1494,39 +1811,53 @@ void app_frame(void)
         ann_say(t, 0, ANN_NOW);
     }
     ann_tick(now);
-    ui.playing = (uint8_t)eng.running;
+    if (ui.playing != (uint8_t)eng.running) {
+        ui.playing = (uint8_t)eng.running;
+        ui.redraw |= R_HEAD;
+    }
     if (ui.saving && now > ui.save_until) {
         ui.saving = 0;
-        ui.redraw = 1;
+        ui.redraw |= R_OLED;
     }
     for (m = 0; m < 3; m++)              /* das Oszilloskop der Modulatoren */
         ui.scope[m][ui.scope_pos] = mn_mod_out(&eng, m);
     ui.scope_pos = (uint8_t)((ui.scope_pos + 1u) % 96u);
-    if (mod_of_page(ui.page) >= 0)
-        ui.redraw = 1;
+    if (oled_animated() && !(ui.frame & 1u))   /* lebende Kurven: 30 Bilder pro Sekunde */
+        ui.redraw |= R_OLED;
+    pk = (int32_t)(fm_sqrtf(out_peak < 1.0f ? out_peak : 1.0f) * 8.0f);
+    if (pk != ui.peak_drawn) {           /* der Pegel im Kopf */
+        ui.peak_drawn = pk;
+        ui.redraw |= R_HEAD;
+    }
     s = mn_step_now(&eng);
     lv = (int32_t)(eng.level_now * 8.0f);
     if (s != ui.step_drawn || lv != ui.lvl_drawn) {
         ui.step_drawn = s;
         ui.lvl_drawn = lv;
         if (ui.page == PG_SEQ1 || ui.page == PG_SEQ2)
-            ui.redraw = 1;
+            ui.redraw |= R_OLED;
     }
-    if ((ui.msg_until && now >= ui.msg_until) || (ui.big_until && now >= ui.big_until)) {
-        if (now >= ui.msg_until)
-            ui.msg_until = 0;
-        if (now >= ui.big_until)
-            ui.big_until = 0;
-        ui.redraw = 1;
+    if (ui.msg_until && now >= ui.msg_until) {
+        ui.msg_until = 0;
+        ui.redraw |= R_HEAD;
+    }
+    if (ui.big_until && now >= ui.big_until) {
+        ui.big_until = 0;
+        ui.redraw |= R_MID;
+    }
+    {   /* ein gedrehter Regler verlischt nach 0.7 s wieder */
+        int k;
+        for (k = 0; k < 4; k++)
+            if (ui.knob_at[k] && now - ui.knob_at[k] >= 700u) {
+                ui.knob_at[k] = 0;
+                ui.redraw |= R_MID;
+            }
     }
     if (now - ui.load_at >= 500u) {
         uint32_t l = plat_cpu_pct() | plat_xruns() << 8;
         ui.load_at = now;
-        if (l != ui.load_shown) {
+        if (l != ui.load_shown)
             ui.load_shown = l;
-            if (ui.page == PG_GLO1 || ui.page == PG_GLO2)
-                ui.redraw = 1;
-        }
         /* bleibt die Last eine Sekunde über 88 %, rechnet die Stimme ohne Oversampling (ECO) weiter */
         if (plat_cpu_pct() > 88u && !eng.eco) {
             if (++ui.hot >= 2) {
@@ -1541,8 +1872,9 @@ void app_frame(void)
     if (!ui.playing && set_dirty && now - dirty_at > 1500u)
         settings_save();
     if (ui.redraw) {
+        uint32_t r = ui.redraw;
         ui.redraw = 0;
-        draw();
+        draw(r);
     }
 }
 

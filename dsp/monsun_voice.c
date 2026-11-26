@@ -328,5 +328,6 @@ static void voice_render(mn_engine *e, float *out, int n)
             }
         }
         e->level_now = e->ae.level;
+        e->cut_hz = 20.0f * mn_exp2(mn_clamp(cut + egl * e->fe.level, 0.0f, 10.0f));
     }
 }

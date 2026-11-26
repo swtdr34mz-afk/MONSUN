@@ -1,5 +1,5 @@
 # every page once, with a screenshot (and the step modulator of preset 14)
-wait 800
+wait 2600
 turn PRESET -3
 wait 100
 expect slot 13

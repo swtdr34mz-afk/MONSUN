@@ -1,8 +1,9 @@
 # MONSUN
 
 A monophonic synth for the M-VAVE FM-1 by **swtdr34mz**, in the spirit of the Dreadbox Typhon.
-On the screen, the look of its panel: anthracite, the name in yellow, black knobs with a teal ring, and below them
-an OLED in a yellow frame.
+On the screen, the look of its panel, refined: anodised anthracite, the name glowing yellow, knurled knobs with brushed
+aluminium caps on glowing teal rings, and an OLED behind glass in its yellow frame, where the real output signal, the
+filter curve and the envelopes move live. It opens with falling rain and a monsoon swirl.
 Built on [fm1-base](https://github.com/charlesvestal/fm1-base) and [felucca-bsp](https://github.com/hugelton/felucca-bsp).
 
 ![MONSUN](site/img/screen-main.png) ![A modulator's destinations](site/img/screen-mod.png) ![The sequencer](site/img/screen-seq.png) ![FX3](site/img/screen-fx.png)
