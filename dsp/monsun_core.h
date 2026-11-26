@@ -120,7 +120,7 @@ typedef struct {
 } mn_mod;
 
 /* FX-Speicher: den gibt der Host (FM-1: der RAM-Pool) */
-#define MN_DLY_FRAMES 37485              /* 0.85 s (der Typhon: 1 s; der RAM-Pool des FM-1 ist knapp) */
+#define MN_DLY_FRAMES 44100              /* 1 s, wie am Typhon */
 #define MN_CHO_FRAMES 2048               /* FX2 */
 #define MN_REV_FLOATS 19200              /* die Reverbs: 12 Kämme, 8 Allpässe */
 #define MN_WIDE_FRAMES 1024              /* STORM */

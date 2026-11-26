@@ -47,7 +47,7 @@ In the Typhon's order: a 2-pole **high-pass** (HP CUT on the filter page), then
 - **FX1** HARD CLIP, FOLDBACK, S-CURVE, TRI CLIP, SHRED, BIT CRUSH: GAIN, LVL, MIX (for the crusher: RATE, BITS)
 - **FX2** CHORUS, ENSEMBLE, FLANGER: DEPTH, SPD, MIX; WIDTH and FEED on FX MORE
 - **FX3** DELAY (left and right times), PING PONG, LARGE REV, SOFT REV (PRE, SIZE): MIX; FEED and DAMP (- low-pass,
-  + high-pass) on FX MORE. Delay times are free or in tempo (DLY SYNC), up to 0.85 s.
+  + high-pass) on FX MORE. Delay times are free or in tempo (DLY SYNC), up to 1 s.
 
 ## The sequencer
 
