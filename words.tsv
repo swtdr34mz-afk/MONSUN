@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: MPL-2.0
+# MONSUN words for a screen reader (fm1-reader): the text on the screen <TAB> what to say.
+# url: https://swtdr34mz-afk.github.io/MONSUN/words/
+MONSUN	monsoon
+BPM	B P M
+VCO	V C O
+VCF	V C F
+VCA	V C A
+EG	E G
+FFM	filter F M
+HP	high pass
+DVS	divisions
+LENG	length
+CV	pitch
+CV1	pitch 1
+CV2	pitch 2
+WAV	wave
+RES	resonance
+EGL	E G level
+HPF	high pass
+ST	semitones

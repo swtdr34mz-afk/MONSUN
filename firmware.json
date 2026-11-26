@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "monsun",
+  "name": "MONSUN",
+  "author": "swtdr34mz",
+  "license": "MPL-2.0",
+  "tagline": "A mono synth after the Dreadbox Typhon: one WAVE knob, three modulators, three FX blocks, a storm",
+  "description": "A monophonic synth in the manner of the Dreadbox Typhon: two oscillators whose wave combinations one WAVE knob fades through (up to FM), a self-oscillating 24 dB ladder low-pass, filter and amp ADSRs with FILTER TIME and AMP TIME, three modulators (LFO, envelope, random, step sequencer) with several destinations each, FX1 distortions and bit crusher, FX2 chorus / ensemble / flanger, FX3 delay, ping pong and two reverbs, a 32-step note sequencer with record, tie, probability and swing, and STORM: detuned copies and stereo width on one knob. 16 presets, MIDI clock in. Unofficial.",
+  "tags": ["synth"],
+  "install": "https://github.com/swtdr34mz-afk/MONSUN/releases",
+  "source": "https://github.com/swtdr34mz-afk/MONSUN",
+  "hardware": {
+    "models": ["FM-1"],
+    "flash": ["856014", "B36014"],
+    "features": ["usb-audio-in", "usb-audio-out", "velocity", "pressure", "screen-reader"]
+  },
+  "credits": "Built on fm1-base (Charles Vestal) and felucca-bsp (Leo Kuroshita, Hügelton Instruments)."
+}

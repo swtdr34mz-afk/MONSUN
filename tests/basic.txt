@@ -1,0 +1,110 @@
+# MONSUN in the host simulator:
+#   X0X_FONTSET=terminus python3 fm1-base/tools/build.py . --host, then build/host/monsun_host tests/basic.txt build/host
+splashshot splash.png
+wait 800
+expect page 0
+expect slot 0
+expect bpm 118
+shot boot.png
+# a key: C4 is key 7 (F3 = key 0)
+key 7 down 100
+wait 200
+expect note 60
+expect gate 1
+wav note.wav
+wait 600
+key 7 up
+wait 400
+wavstop
+expect peak_db_min -30
+expect gate 0
+# the filter page and SELECT (cutoff)
+tap SEL
+wait 30
+expect page 1
+turn SELECT 5
+wait 30
+shot filter.png
+# the filter envelope, then the amp envelope
+tap ENV
+wait 30
+expect page 2
+shot fenv.png
+tap ENV
+wait 30
+expect page 3
+# the modulators: M1, M1 DEST
+tap LFO
+wait 30
+expect page 4
+shot m1.png
+tap LFO
+wait 30
+expect page 5
+turn K1 4
+turn K2 10
+wait 30
+expect dest 4
+shot m1dest.png
+# FX
+tap FX
+wait 30
+expect page 12
+shot fx.png
+# the sequencer: play
+tap SEQ
+wait 30
+expect page 18
+tap PLAY
+wav seq.wav
+wait 2500
+wavstop
+expect playing 1
+expect peak_db_min -30
+shot seq.png
+# a key while it plays transposes: the step notes stay as they are
+key 9 down 100
+wait 300
+key 9 up
+expect seqnote1 33
+tap PLAY
+wait 100
+expect playing 0
+# RECORD: two keys into steps 1 and 2
+tap REC
+wait 30
+expect rec 1
+key 7 down 90
+wait 100
+key 7 up
+key 11 down 90
+wait 100
+key 11 up
+expect seqnote1 60
+expect seqnote2 64
+expect ssel 2
+shot rec.png
+tap REC
+expect rec 0
+# STORM on ALGORITHM
+turn ALGO 20
+wait 30
+expect edited 1
+# presets: the next slot
+turn PRESET 1
+wait 100
+expect slot 1
+expect edited 0
+shot preset.png
+# global page
+tap GLO
+wait 30
+expect page 16
+shot glo.png
+# HOLD
+tap ARP
+expect hold 1
+tap ARP
+expect hold 0
+wait 2000
+expect dirty 0

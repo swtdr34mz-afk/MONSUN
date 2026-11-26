@@ -1,0 +1,48 @@
+# every page once, with a screenshot (and the step modulator of preset 14)
+wait 800
+turn PRESET -3
+wait 100
+expect slot 13
+tap HOME
+shot p_main.png
+tap ENV
+tap ENV
+shot p_aenv.png
+tap LFO
+wait 30
+shot p_m1step.png
+turn K3 3
+expect page 4
+tap LFO
+shot p_m1dest.png
+tap LFO
+turn K1 1
+wait 30
+shot p_m2env.png
+tap EDIT
+shot p_set1.png
+tap EDIT
+shot p_set2.png
+tap FX
+tap FX
+tap FX
+shot p_fx3.png
+turn K1 1
+wait 30
+shot p_fx3rev.png
+tap FX
+shot p_fxp.png
+tap GLO
+tap GLO
+shot p_glo2.png
+tap SEQ
+tap SEQ
+shot p_seq2.png
+tap SAVE
+turn PRESET 2
+wait 30
+shot p_save.png
+tap SAVE
+wait 30
+expect slot 15
+expect edited 0

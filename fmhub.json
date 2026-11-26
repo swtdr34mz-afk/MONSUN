@@ -1,0 +1,9 @@
+{
+  "what": "A mono synth after the Dreadbox Typhon: a WAVE knob that fades through oscillator combinations up to FM, a 24 dB ladder filter, three modulators with several destinations each, distortion, chorus/ensemble/flanger, delay and reverbs, a 32-step sequencer and STORM for width.",
+  "author": "swtdr34mz",
+  "kinds": "synth",
+  "play": "https://swtdr34mz-afk.github.io/MONSUN/emu/",
+  "image": "site/img/screen-main.png",
+  "color": "#FAD41E",
+  "sounds": "none"
+}
