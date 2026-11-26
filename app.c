@@ -1921,10 +1921,11 @@ void app_panic(void)
     mn_all_off(&eng);
 }
 
-void app_splash(void)                    /* der Startbildschirm: das Ende der Eröffnung, still */
+void app_splash(void)                    /* der Startbildschirm: der erste Moment der Eröffnung (nur das Panel und der
+                                          * erste Regen), damit die Animation nahtlos daraus weiterläuft */
 {
     lcd_fill(0, 0, 240, 240, C_PANEL);
-    intro_draw(3.0f);
+    intro_draw(0.0f);
 }
 
 void app_ui_init(void)
