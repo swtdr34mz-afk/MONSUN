@@ -107,7 +107,6 @@ sequence), pitch bend bends it.
 | ALGORITHM | STORM |
 | PRESET | The 16 preset slots (loads at once; changes not saved are left behind, as on the Typhon) |
 | SAVE | Save: PRESET picks the slot, SAVE again saves (any other button cancels) |
-| REC held 1 s | The slot's factory preset back (save it to keep it) |
 | ARP | HOLD: notes keep sounding after the keys are let go (HOLD in yellow in the header); on a SEQ page: copy / paste a step |
 | REC | On a SEQ page: RECORD; on the GROOVE pages: the groove on / off; elsewhere held 1 s: the factory preset |
 | OCT- / OCT+ | The keys' octave |
