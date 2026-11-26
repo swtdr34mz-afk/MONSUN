@@ -36,10 +36,10 @@ beat is silent and only the pump stays (for drums from elsewhere, e.g. a second 
 
 | Page | K1 | K2 | K3 | K4 |
 | --- | --- | --- | --- | --- |
-| **GROOVE** (ARP) | STYLE | KICK (short and punchy .. long and boomy) | DRUMS (level) | PUMP (depth) |
-| **GROOVE SETUP** (GLO, third page) | RELEASE (how fast the pump comes back) | HATS | TUNE (the kick, ±12) | VAR (ghost notes, rolls, fills) |
+| **GROOVE** (HOME again) | STYLE | KICK (short and punchy .. long and boomy) | DRUMS (level) | PUMP (depth) |
+| **GROOVE SETUP** (HOME a third time) | RELEASE (how fast the pump comes back) | HATS | TUNE (the kick, ±12) | VAR (ghost notes, rolls, fills) |
 
-On the GROOVE page **ARP** switches the groove on and off; its LED flashes with every kick. The OLED shows the five
+On the GROOVE pages **REC** switches the groove on and off (as on BA-55); the HOME LED flashes with every kick. The OLED shows the five
 lanes with the playhead and the pump's curve, and the name in the header breathes with the pump. The groove settings
 are global: changing presets keeps the beat.
 
@@ -86,6 +86,8 @@ sequence), pitch bend bends it.
 | Button | Page | K1 | K2 | K3 | K4 |
 | --- | --- | --- | --- | --- | --- |
 | HOME | **PANEL** | WAVE | TUNE 2 | FILTER TIME | AMP TIME |
+| HOME again | **GROOVE** (REC: on / off) | STYLE | KICK | DRUMS | PUMP |
+| HOME a third time | **GROOVE SETUP** | RELEASE | HATS | TUNE | VAR |
 | SEL | **FILTER** | CUTOFF | RESON | EG LEVEL | HP CUT |
 | ENV | **FILTER EG** (ENV again: **AMP EG**) | ATTACK | DECAY | SUSTAIN | RELEASE |
 | LFO | **M1**, **M1 DEST**, **M2**, **M2 DEST**, **M3**, **M3 DEST** | MODE / DEST | (by mode) / LVL | (by mode) / SYNC | (by mode) |
@@ -94,8 +96,6 @@ sequence), pitch bend bends it.
 | FX | **FX1**, **FX2**, **FX3**, **FX MORE** | TYPE | | | MIX |
 | GLO | **GLOBAL** | TEMPO | VEL>CUT | VEL>VCA | DLY SYNC |
 | GLO again | **SETTINGS** | BEND (semitones) | MIDI CH | VELOCITY (on / fixed) | HOLD |
-| GLO a third time | **GROOVE SETUP** | RELEASE | HATS | TUNE | VAR |
-| ARP | **GROOVE** (ARP again: on / off) | STYLE | KICK | DRUMS | PUMP |
 | SEQ | **SEQUENCER** | STEP | NOTE | GATE | VEL |
 | SEQ again | **SEQ SETUP** | LENG | DVS | PROB | SWING |
 
@@ -108,8 +108,8 @@ sequence), pitch bend bends it.
 | PRESET | The 16 preset slots (loads at once; changes not saved are left behind, as on the Typhon) |
 | SAVE | Save: PRESET picks the slot, SAVE again saves (any other button cancels) |
 | REC held 1 s | The slot's factory preset back (save it to keep it) |
-| ARP | The GROOVE page; there: groove on / off; on a SEQ page: copy / paste a step |
-| ARP held 1 s | HOLD: notes keep sounding after the keys are let go (HOLD in yellow in the header) |
+| ARP | HOLD: notes keep sounding after the keys are let go (HOLD in yellow in the header); on a SEQ page: copy / paste a step |
+| REC | On a SEQ page: RECORD; on the GROOVE pages: the groove on / off; elsewhere held 1 s: the factory preset |
 | OCT- / OCT+ | The keys' octave |
 | PLAY | The sequencer: start / stop |
 

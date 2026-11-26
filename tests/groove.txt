@@ -1,10 +1,12 @@
-# GROOVE: ARP opens the page, ARP again switches it on; it plays with PLAY and the kicks pump
+# GROOVE (as on BA-55): HOME twice opens it, REC there switches it on; it plays with PLAY and the kicks pump
 wait 2600
-tap ARP
+tap SEL
+tap HOME
+tap HOME
 wait 30
 expect page 20
 expect groove 0
-tap ARP
+tap REC
 wait 30
 expect groove 1
 turn K1 2
@@ -18,32 +20,33 @@ expect playing 1
 expect peak_db_min -20
 shot groove.png
 expect kicks_ge5 1
-# the setup page under GLO
-tap GLO
-tap GLO
-tap GLO
+# HOME a third time: the setup
+tap HOME
 wait 30
 expect page 21
 shot groove_setup.png
-# off again: ARP on the GROOVE page
-tap ARP
-wait 30
-expect page 20
-tap ARP
+# off again: REC on a GROOVE page
+tap REC
 wait 30
 expect groove 0
+tap HOME
+wait 30
+expect page 0
+tap HOME
+wait 30
+expect page 20
 tap PLAY
 wait 100
 expect playing 0
 # switched on while the sequence runs: it comes in on the beat
 tap PLAY
 wait 1700
-tap ARP
+tap REC
 wait 37
 expect groove 1
 expect galign 1
 wait 913
 expect galign 1
 expect kicks_ge7 1
-tap ARP
+tap REC
 tap PLAY

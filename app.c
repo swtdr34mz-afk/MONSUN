@@ -156,7 +156,7 @@ static void e_hold(int on)
 
 /* ------------------------------------------------------------------ Seiten --- */
 enum { PG_MAIN, PG_FILTER, PG_FENV, PG_AENV, PG_M1, PG_M1D, PG_M2, PG_M2D, PG_M3, PG_M3D, PG_SET1, PG_SET2,
-       PG_FX1, PG_FX2, PG_FX3, PG_FXP, PG_GLO1, PG_GLO2, PG_SEQ1, PG_SEQ2, PG_GRV, PG_GLO3, NPAGES };
+       PG_FX1, PG_FX2, PG_FX3, PG_FXP, PG_GLO1, PG_GLO2, PG_SEQ1, PG_SEQ2, PG_GRV, PG_GSET, NPAGES };
 static const char *const PAGE_NAME[NPAGES] = {"PANEL", "FILTER", "FILTER EG", "AMP EG", "M1", "M1 DEST", "M2",
                                               "M2 DEST", "M3", "M3 DEST", "SET", "SET 2", "FX1 DIST", "FX2 ENHANCE",
                                               "FX3 REFLECT", "FX MORE", "GLOBAL", "SETTINGS", "SEQUENCER",
@@ -215,8 +215,6 @@ static struct {
     uint8_t saving, save_slot;           /* SAVE: der Platz wird gewählt */
     uint32_t save_until;
     uint32_t rec_t;                      /* REC gehalten seit */
-    uint32_t arp_t;                      /* ARP gedrückt seit (kurz: GROOVE, 1 s: HOLD) */
-    uint8_t arp_long;
     uint32_t kick_seen, flash_until;     /* der Kick-Blitz (LED, Logo) */
     int8_t key_note[NKEYS];              /* die Note jeder gedrückten Taste */
     int32_t step_drawn, lvl_drawn;
@@ -849,6 +847,28 @@ static void keys_input(uint32_t keys)
     }
 }
 
+static void hold_toggle(void)
+{
+    ui.hold = (uint8_t)!ui.hold;
+    e_hold(ui.hold);
+    ui.redraw |= R_ALL;
+    app_say("HOLD", ui.hold ? "ON" : "OFF");
+}
+
+static void seq_copy(void)               /* ARP auf den SEQ-Seiten: Step kopieren, dann einfügen */
+{
+    if (ui.copied < 0) {
+        ui.clip = edit.seq[ui.ssel];
+        ui.copied = (int8_t)ui.ssel;
+        app_say("COPIED", "STEP");
+    } else {
+        edit.seq[ui.ssel] = ui.clip;
+        ui.copied = -1;
+        edited();
+        app_say("PASTED", "");
+    }
+}
+
 static void button(uint32_t i)
 {
     int seqp = ui.page == PG_SEQ1 || ui.page == PG_SEQ2;
@@ -858,13 +878,13 @@ static void button(uint32_t i)
         return;
     }
     switch (i) {
-    case B_HOME: page_set(PG_MAIN); break;
+    case B_HOME: page_set(ui.page == PG_MAIN ? PG_GRV : ui.page == PG_GRV ? PG_GSET : PG_MAIN); break;   /* PANEL, GROOVE, GROOVE SETUP */
     case B_SEL: page_set(PG_FILTER); break;
     case B_ENV: page_set(ui.page == PG_FENV ? PG_AENV : PG_FENV); break;
     case B_LFO: page_set(ui.page >= PG_M1 && ui.page < PG_M3D ? ui.page + 1 : PG_M1); break;
     case B_EDIT: page_set(ui.page == PG_SET1 ? PG_SET2 : PG_SET1); break;
     case B_FX: page_set(ui.page >= PG_FX1 && ui.page < PG_FXP ? ui.page + 1 : PG_FX1); break;
-    case B_GLO: page_set(ui.page == PG_GLO1 ? PG_GLO2 : ui.page == PG_GLO2 ? PG_GLO3 : PG_GLO1); break;
+    case B_GLO: page_set(ui.page == PG_GLO1 ? PG_GLO2 : PG_GLO1); break;
     case B_SEQ: page_set(ui.page == PG_SEQ1 ? PG_SEQ2 : PG_SEQ1); break;
     case B_PLAY: play_toggle(); break;
     case B_REC:
@@ -872,6 +892,11 @@ static void button(uint32_t i)
             ui.rec = (uint8_t)!ui.rec;
             ui.redraw |= R_ALL;
             app_say(ui.rec ? "RECORD" : "RECORD OFF", ui.rec ? "PLAY THE KEYS" : "");
+        } else if (ui.page == PG_GRV || ui.page == PG_GSET) {   /* auf den GROOVE-Seiten: der Groove an / aus */
+            set.grv.on = (uint8_t)!set.grv.on;
+            dirty();
+            ui.redraw |= R_ALL;
+            app_say("GROOVE", set.grv.on ? MN_STYLE_NAME[set.grv.style] : "OFF");
         } else {
             ui.rec_t = plat_ms();
         }
@@ -887,9 +912,11 @@ static void button(uint32_t i)
             slot_save(ui.save_slot);
         }
         break;
-    case B_ARP:                          /* kurz oder lang: entschieden beim Loslassen / nach 1 s (arp_up) */
-        ui.arp_t = plat_ms();
-        ui.arp_long = 0;
+    case B_ARP:                          /* auf den SEQ-Seiten: Step kopieren / einfügen; sonst HOLD */
+        if (seqp)
+            seq_copy();
+        else
+            hold_toggle();
         break;
     case B_OCTDN:
     case B_OCTUP: {
@@ -907,51 +934,8 @@ static void button(uint32_t i)
     }
 }
 
-static void hold_toggle(void)
-{
-    ui.hold = (uint8_t)!ui.hold;
-    e_hold(ui.hold);
-    ui.redraw |= R_ALL;
-    app_say("HOLD", ui.hold ? "ON" : "OFF");
-}
-
-/* ARP losgelassen, kurz gedrückt: auf den SEQ-Seiten Step kopieren / einfügen; auf der GROOVE-Seite den Groove an
- * oder aus; sonst die GROOVE-Seite */
-static void arp_short(void)
-{
-    if (ui.page == PG_SEQ1 || ui.page == PG_SEQ2) {
-        if (ui.copied < 0) {
-            ui.clip = edit.seq[ui.ssel];
-            ui.copied = (int8_t)ui.ssel;
-            app_say("COPIED", "STEP");
-        } else {
-            edit.seq[ui.ssel] = ui.clip;
-            ui.copied = -1;
-            edited();
-            app_say("PASTED", "");
-        }
-    } else if (ui.page == PG_GRV) {
-        set.grv.on = (uint8_t)!set.grv.on;
-        dirty();
-        ui.redraw |= R_ALL;
-        app_say("GROOVE", set.grv.on ? MN_STYLE_NAME[set.grv.style] : "OFF");
-    } else {
-        page_set(PG_GRV);
-    }
-}
-
 static void held_buttons(uint32_t btn)
 {
-    if (ui.arp_t) {
-        if (!(btn >> B_ARP & 1u)) {      /* losgelassen */
-            if (!ui.arp_long)
-                arp_short();
-            ui.arp_t = 0;
-        } else if (!ui.arp_long && plat_ms() - ui.arp_t >= 1000u) {
-            ui.arp_long = 1;             /* 1 s gehalten: HOLD */
-            hold_toggle();
-        }
-    }
     if (ui.rec_t) {
         if (!(btn >> B_REC & 1u))
             ui.rec_t = 0;
@@ -1012,16 +996,16 @@ static void lights(void)
 {
     static const uint8_t PAGE_BTN[NPAGES] = {B_HOME, B_SEL, B_ENV, B_ENV, B_LFO, B_LFO, B_LFO, B_LFO, B_LFO, B_LFO,
                                              B_EDIT, B_EDIT, B_FX, B_FX, B_FX, B_FX, B_GLO, B_GLO, B_SEQ, B_SEQ,
-                                             B_ARP, B_GLO};
+                                             B_HOME, B_HOME};
     uint32_t btn = 1u << PAGE_BTN[ui.page], dimb, lit = 0, k;
     if (ui.playing)
         btn |= LED_PLAY_GREEN;
     if (ui.rec)
         btn |= 1u << B_REC;
-    if (set.grv.on && plat_ms() < ui.flash_until)   /* GROOVE an: ARP blitzt mit jeder Kick */
+    if (ui.hold)
         btn |= 1u << B_ARP;
-    else if (!set.grv.on || !ui.playing)
-        btn &= ~(1u << B_ARP);
+    if (set.grv.on && ui.playing && plat_ms() < ui.flash_until)   /* GROOVE an: HOME blitzt mit jeder Kick */
+        btn ^= 1u << B_HOME;
     if (ui.saving && (plat_ms() / 250u) & 1u)
         btn |= 1u << B_SAVE;
     if (set.oct != 3)
@@ -1198,8 +1182,8 @@ static void draw_knob(int k, int32_t cx, int32_t y, uint32_t now)
 /* ---- die Seitengruppen: kleine Leuchtpunkte, wo man in der Gruppe ist ---- */
 static void group_of(int pg, int *i, int *n)
 {
-    static const uint8_t G0[NPAGES] = {0, 0, 0, 1, 0, 1, 2, 3, 4, 5, 0, 1, 0, 1, 2, 3, 0, 1, 0, 1, 0, 2};
-    static const uint8_t GN[NPAGES] = {1, 1, 2, 2, 6, 6, 6, 6, 6, 6, 2, 2, 4, 4, 4, 4, 3, 3, 2, 2, 1, 3};
+    static const uint8_t G0[NPAGES] = {0, 0, 0, 1, 0, 1, 2, 3, 4, 5, 0, 1, 0, 1, 2, 3, 0, 1, 0, 1, 1, 2};
+    static const uint8_t GN[NPAGES] = {3, 1, 2, 2, 6, 6, 6, 6, 6, 6, 2, 2, 4, 4, 4, 4, 2, 2, 2, 2, 3, 3};
     *i = G0[pg];
     *n = GN[pg];
 }
@@ -1641,7 +1625,7 @@ static void oled_groove(void)            /* die Spuren des Grooves (zwei Takte),
         if (set.grv.on)
             text_glow(229 - w, 64, &FONT_XS, st, C_YEL, C_YEL_DIM);
         else
-            cv_text(229 - w, 64, &FONT_XS, "OFF  ARP: ON", C_OLED_DIM);
+            cv_text(229 - w, 64, &FONT_XS, "OFF  REC: ON", C_OLED_DIM);
     }
 }
 
@@ -1650,7 +1634,7 @@ static int oled_animated(void)           /* diese Seiten bewegen sich: das OLED 
     return ui.page == PG_MAIN || ui.page == PG_FILTER || ui.page == PG_FENV || ui.page == PG_AENV
            || ui.page == PG_SET1 || ui.page == PG_SET2 || mod_of_page(ui.page) >= 0
            || ((ui.page == PG_SEQ1 || ui.page == PG_SEQ2) && ui.rec) || ui.page == PG_GLO1 || ui.page == PG_GLO2
-           || ui.page == PG_GRV || ui.page == PG_GLO3;
+           || ui.page == PG_GRV || ui.page == PG_GSET;
 }
 
 static void draw_oled(void)
@@ -1676,7 +1660,7 @@ static void draw_oled(void)
         case PG_SEQ1:
         case PG_SEQ2: oled_seq(); break;
         case PG_GRV:
-        case PG_GLO3: oled_groove(); break;
+        case PG_GSET: oled_groove(); break;
         default: oled_glo(); break;
         }
     oled_glass();
