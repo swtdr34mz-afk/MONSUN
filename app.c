@@ -2088,6 +2088,8 @@ int app_expect(const char *what, int *got)
         *got = set.grv.on;
     else if (!strcmp(what, "gstyle"))
         *got = set.grv.style;
+    else if (!strcmp(what, "galign"))   /* der Groove im Takt der Sequenz: dieselbe Sechzehntel (1) */
+        *got = eng.running && (eng.g_step & 15) == (eng.cur & 15);
     else if (!strcmp(what, "gstep"))
         *got = mn_groove_step(&eng);
     else if (!strncmp(what, "kicks_ge", 8))   /* kicks_geN: mindestens N Kicks gespielt (1) */

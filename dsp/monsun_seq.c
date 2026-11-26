@@ -191,7 +191,7 @@ static void clock_tick(mn_engine *e)
         int tps = 96 / mn_dvs(e);
         if (e->ext_ticks % tps == 0)
             advance(e);
-        if (e->gv && e->gv->on && e->ext_ticks % 6 == 0)   /* der Groove: eine Sechzehntel je 6 Pulse */
+        if (e->gv && e->ext_ticks % 6 == 0)   /* der Groove: eine Sechzehntel je 6 Pulse (zählt auch aus: im Takt) */
             groove_step(e, 0);
         e->ext_ticks++;
     }
@@ -253,7 +253,8 @@ void mn_render(mn_engine *e, float *l, float *r, int n)
             if (until < chunk)
                 chunk = until < 1 ? 1 : until;
         }
-        if (e->running && !e->ext && e->gv && e->gv->on) {   /* der Groove: seine Sechzehntel, mit seinem Swing */
+        if (e->running && !e->ext && e->gv) {   /* der Groove: seine Sechzehntel, mit seinem Swing; sein Takt läuft
+                                                   * auch, wenn er aus ist: eingeschaltet setzt er im Takt ein */
             int until;
             if (e->g_to_next <= 0.0f) {
                 float g16 = e->sr * 15.0f / mn_bpm(e), sw = STYLES[grv_style(e)].swing;
@@ -276,7 +277,7 @@ void mn_render(mn_engine *e, float *l, float *r, int n)
         voice_render(e, out + done, chunk);
         if (e->running && !e->ext)
             e->to_next -= (float)chunk;
-        if (e->running && !e->ext && e->gv && e->gv->on)
+        if (e->running && !e->ext && e->gv)
             e->g_to_next -= (float)chunk;
         if (e->gate_left > 0.0f) {
             e->gate_left -= (float)chunk;
@@ -297,9 +298,11 @@ void mn_render(mn_engine *e, float *l, float *r, int n)
         done += chunk;
     }
     fx_render(e, out, l, r, n);
-    if (e->gv && (e->gv->on || e->gqn)) /* GROOVE: die Pumpe und die Drums */
+    if (e->gv && e->gv->on) /* GROOVE: die Pumpe und die Drums */
         groove_render(e, l, r, n);
-    else
+    else {                               /* aus: die Steps zählen weiter, klingen aber nicht */
+        e->gqn = 0;
         e->sc_now = 1.0f;
+    }
     e->counter += (uint32_t)n;
 }
